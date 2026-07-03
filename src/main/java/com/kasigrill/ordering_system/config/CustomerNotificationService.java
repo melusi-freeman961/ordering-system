@@ -7,6 +7,7 @@ import java.util.List;
 
 public interface CustomerNotificationService {
 
+    void publishUnexpectedMessageResponse(String channelId);
     boolean getCustomerNumber(String channelId);
 
     void publishEmptyMenu(String channelId);
@@ -15,7 +16,7 @@ public interface CustomerNotificationService {
 
     boolean getName(String channelId);
 
-    boolean sendOrderConfirmation(String channelId);
+    boolean publishAnotherOrderRequest(String channelId);
 
     boolean sendOrderStatus(String status, String channelId,String orderNumber);
 

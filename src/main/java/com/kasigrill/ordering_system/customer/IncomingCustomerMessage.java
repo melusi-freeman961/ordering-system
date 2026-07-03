@@ -8,4 +8,5 @@ public interface IncomingCustomerMessage {
     String getChannelId();
     String getMessage();
     Map<String,Object> getLocation();
+
 }

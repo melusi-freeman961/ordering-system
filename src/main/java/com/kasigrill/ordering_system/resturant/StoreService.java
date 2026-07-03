@@ -7,6 +7,8 @@ import com.kasigrill.ordering_system.menuitem.MenuItemDto;
 import com.kasigrill.ordering_system.menuitem.MenuItemStatus;
 import com.kasigrill.ordering_system.menuitem.MenuRepository;
 import com.kasigrill.ordering_system.order.*;
+import com.kasigrill.ordering_system.shipday.ShipDayDeliveryService;
+import com.kasigrill.ordering_system.shipday.ShipDayOrderRequest;
 import com.kasigrill.ordering_system.telegram.VendorMessageData;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -36,6 +38,7 @@ public class StoreService {
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final AdminRepository adminRepository;
+    private final ShipDayDeliveryService deliveryService;
 
     public StoreService(CustomerNotificationService service1
             , VendorNotificationService service2
@@ -44,7 +47,8 @@ public class StoreService {
             , MenuRepository menuRepository
             , OrderRepository orderRepository
             , OrderItemRepository orderItemRepository
-            , AdminRepository adminRepository) {
+            , AdminRepository adminRepository
+            , ShipDayDeliveryService deliveryService) {
         this.customerNotService = service1;
         this.customerRepository = customerRepository;
         this.sessionRepository = sessionRepository;
@@ -53,6 +57,7 @@ public class StoreService {
         this.orderItemRepository = orderItemRepository;
         this.vendorNotService = service2;
         this.adminRepository = adminRepository;
+        this.deliveryService=deliveryService;
     }
 
     public List<MenuItemDto> getMenu() {
@@ -94,7 +99,7 @@ public class StoreService {
 
         CustomerSession session = new CustomerSession();
         session.setCustomer(customer);
-        session.setState(AWAITING_MENU_SELECTION);
+        session.setState(CONNECTED);
 
         return sessionRepository.save(session);
     }
@@ -122,6 +127,17 @@ public class StoreService {
         return !now.isBefore(OPENING_TIME) && !now.isAfter(CLOSING_TIME);
     }
 
+    private void loadMenuAndChangeState(Customer customer, IncomingCustomerMessage message) {
+        List<MenuItemDto> items = new ArrayList<>();
+        for (MenuItem menuItem : menuRepository.findByAvailableTrue()) {
+            items.add(new MenuItemDto(menuItem.getName(), String.valueOf(menuItem.getId()), String.valueOf(menuItem.getPrice())));
+        }
+        boolean sent = customerNotService.sendMenu(message, items);
+
+        if (sent && !items.isEmpty()) {
+            customer.getSession().setState(AWAITING_MENU_SELECTION);
+        }
+    }
 
     @Transactional
     public void executeCustomerMessage(IncomingCustomerMessage message) {
@@ -137,9 +153,16 @@ public class StoreService {
             try {
 
                 customer = registerUser(message.getChannelId());
+                List<MenuItemDto> items = getMenu();
+                if (items != null) {
+                    boolean sent = customerNotService.sendMenu(message, getMenu());
 
-                if (getMenu() != null) {
-                    customerNotService.sendMenu(message, getMenu());
+                    if (sent) {
+                        if (!items.isEmpty()) {
+                            customer.getSession().setState(AWAITING_MENU_SELECTION);
+                            customerRepository.save(customer);
+                        }
+                    }
                 }
 
                 return;
@@ -148,35 +171,46 @@ public class StoreService {
 
                 customer = customerRepository.findByIdentifierChannelId(message.getChannelId());
             }
+
+
         }
 
-
-        if (customer.getStatus().equalsIgnoreCase(CustomerStatus.INACTIVE.name())) {
-
-            customer.setStatus(CustomerStatus.RETURNING.name());
-
-            if (message.getMessage() != null && message.getMessage().equalsIgnoreCase("1")) {
-
-                List<MenuItemDto> items = new ArrayList<>();
-                for (MenuItem menuItem : menuRepository.findByAvailableTrue()) {
-                    items.add(new MenuItemDto(menuItem.getName(), String.valueOf(menuItem.getId()), String.valueOf(menuItem.getPrice())));
-                }
-                boolean sent = customerNotService.sendMenu(message, items);
-
-                if (sent) {
-                    customer.getSession().setState(AWAITING_MENU_SELECTION);
-                }
-
-            }
-
-            return;
-        }
 
         CustomerSession session = customer.getSession();
         CustomerSessionState state = session.getState();
 
+        boolean inactiveCustomer = customer.getStatus().equalsIgnoreCase(CustomerStatus.INACTIVE.name());
+
+        if (inactiveCustomer || state == CONNECTED) {
+
+            if (inactiveCustomer && (!message.getMessage().equalsIgnoreCase("1")
+                    || !message.getMessage().equalsIgnoreCase("SHOW ME THE MENU"))) {
+
+                customerNotService.publishUnexpectedMessageResponse(message.getChannelId());
+            }
+
+            if (message.getMessage() != null && message.getMessage().equalsIgnoreCase("SHOW ME THE MENU") && inactiveCustomer) {
+                customer.setStatus(CustomerStatus.RETURNING.name());
+
+                loadMenuAndChangeState(customer, message);
+            }
+
+            if (message.getMessage() != null && message.getMessage().equalsIgnoreCase("1") && inactiveCustomer) {
+
+                customer.setStatus(CustomerStatus.RETURNING.name());
+
+                loadMenuAndChangeState(customer, message);
+            }
+
+            if (message.getMessage() != null && message.getMessage().equalsIgnoreCase("SHOW ME THE MENU") && !inactiveCustomer) {
+                loadMenuAndChangeState(customer, message);
+            }
+            return;
+        }
+
         switch (state) {
             case AWAITING_MENU_SELECTION:
+
 
                 updateOrder(message, customer);
 
@@ -263,8 +297,10 @@ public class StoreService {
 
                 order.setStatus(OrderStatus.PLACED.name());
                 orderRepository.save(order);
+                ShipDayOrderRequest deliveryDto = createDeliveryDto(order);
+                deliveryService.dispatchOrder(deliveryDto);
                 customerNotService.sendOrderStatus(OrderStatus.PLACED.name(), message.getChannelId(), orderDto.orderNumber());
-                customerNotService.sendOrderConfirmation(message.getChannelId());
+                customerNotService.publishAnotherOrderRequest(message.getChannelId());
 
                 break;
             default:
@@ -273,7 +309,31 @@ public class StoreService {
 
 
     }
+    private ShipDayOrderRequest createDeliveryDto(CustomerOrder order){
 
+        Customer customer=order.getCustomer();
+        String address=customer.getLocation();
+        String orderNumber = "#Kasi2-6" + order.getId();
+        String customerName=customer.getName();
+        String customerPhoneNumber=customer.getMobile();
+        String restaurantName="Kasi grill";
+        String restaurantAddress=address;
+        double totalOrderCost= Double.parseDouble(String.valueOf(order.getOrderItem().getMenuItem().getPrice()));
+        String deliveryInstructions="hhfjwekjjijiuehh";
+
+
+        ShipDayOrderRequest request=new ShipDayOrderRequest();
+        request.setCustomerAddress(address);
+        request.setDeliveryInstructions(deliveryInstructions);
+        request.setCustomerName(customerName);
+        request.setOrderNumber(orderNumber);
+        request.setRestaurantAddress(restaurantAddress);
+        request.setCustomerPhoneNumber(customerPhoneNumber);
+        request.setRestaurantName(restaurantName);
+        request.setTotalOrderCost(totalOrderCost);
+
+        return request;
+    }
     private OrderDto createOrderDto(CustomerOrder order) {
 
         Customer customer = order.getCustomer();

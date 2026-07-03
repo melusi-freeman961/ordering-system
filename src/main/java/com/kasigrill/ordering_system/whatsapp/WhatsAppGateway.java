@@ -26,10 +26,15 @@ public class WhatsAppGateway {
         String url = "https://graph.facebook.com/v25.0/" + phoneNumberId + "/messages";
         var requestEntity = setUpHttp(payload);
 
+
+        // Print the request before sending
+        System.out.println("URL: " + url);
+        System.out.println("Payload: " + payload);
+
         try {
 
             ResponseEntity<Map> mapResponseEntity = restTemplate.postForEntity(url, requestEntity, Map.class);
-            System.out.println("🚀 [WhatsApp API] Payload successfully transmitted to Meta.");
+            System.out.println(mapResponseEntity.getStatusCode());
             return mapResponseEntity.getStatusCode().is2xxSuccessful();
 
 
@@ -71,8 +76,7 @@ public class WhatsAppGateway {
 
     }
 
-    public boolean sendOrderConfirmation(String customerNumber) {
-
+    public boolean requestAnotherOrder(String customerNumber) {
 
         return sendMessage(Map.of(
                 "messaging_product", "whatsapp",
@@ -127,6 +131,10 @@ public class WhatsAppGateway {
 
     public boolean menuResponseMessage(String messageText, String customerNumber, List<MenuItemDto> menu) {
 
+        if (menu.isEmpty()) {
+            menuEmptyNotification(customerNumber);
+        }
+
         List<Map<String, Object>> rows = menu.stream()
                 .map(item -> Map.<String, Object>of(
                         "id", "item_" + item.id(),
@@ -158,6 +166,7 @@ public class WhatsAppGateway {
                     )
             ));
         }
+
         return false;
     }
 

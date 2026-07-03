@@ -19,7 +19,13 @@ public class WhatsappPayloadParser {
             Map<?, ?> changeMap = (Map<?, ?>) changes.get(0);
             Map<?, ?> value = (Map<?, ?>) changeMap.get("value");
 
-            return value.containsKey("statuses"); // Returns true if it's just a read/delivery receipt
+            if (value.containsKey("statuses") && value.get("statuses") != null) {
+                System.out.println("====== METRIC STATUS UPDATE DETECTED ======");
+                System.out.println(value.get("statuses"));
+                System.out.println("===========================================");
+                return true;
+            }
+            return false;// Returns true if it's just a read/delivery receipt
         } catch (Exception e) {
             return false;
         }

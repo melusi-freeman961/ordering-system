@@ -52,6 +52,11 @@ public class WhatsAppService implements CustomerNotificationService {
 
 
     @Override
+    public void publishUnexpectedMessageResponse(String channelId) {
+        whatsAppGateway.requestAnotherOrder(channelId);
+    }
+
+    @Override
     public boolean getCustomerNumber(String channelId) {
         return whatsAppGateway.getCustomerNumber(channelId);
     }
@@ -67,8 +72,8 @@ public class WhatsAppService implements CustomerNotificationService {
     }
 
     @Override
-    public boolean sendOrderConfirmation(String channelId) {
-        return whatsAppGateway.sendOrderConfirmation(channelId);
+    public boolean publishAnotherOrderRequest(String channelId) {
+        return whatsAppGateway.requestAnotherOrder(channelId);
     }
 
     @Override

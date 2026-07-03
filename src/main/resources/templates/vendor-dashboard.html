@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>KasiGrill Vendor Portal</title>
+    <style>
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background-color: #f3f4f6; padding: 30px; color: #1f2937; }
+        .wrapper { max-width: 900px; margin: 0 auto; background: #ffffff; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        h2 { margin-top: 0; font-size: 1.5rem; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px; color: #111827; }
+        .form-inline { display: flex; gap: 15px; margin-bottom: 30px; background: #f9fafb; padding: 15px; border-radius: 8px; align-items: flex-end; border: 1px solid #e5e7eb; }
+        .field { display: flex; flex-direction: column; flex: 1; }
+        label { font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; color: #4b5563; }
+        input { padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.95rem; }
+        .btn-save { background: #2563eb; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 600; height: 41px; }
+        .btn-save:hover { background: #1d4ed8; }
+
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th, td { padding: 14px; border-bottom: 1px solid #e5e7eb; }
+        th { background-color: #f9fafb; color: #4b5563; font-weight: 600; }
+
+        .actions-cell { display: flex; gap: 12px; }
+        .btn-action-edit { background: #f59e0b; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.85rem; font-weight: 500; }
+        .btn-action-delete { background: #ef4444; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.85rem; font-weight: 500; }
+        .btn-action-delete:hover { background: #dc2626; }
+        .status-badge { padding: 3px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: bold; background: #e0f2fe; color: #0369a1; }
+    </style>
+</head>
+<body>
+
+<div class="wrapper">
+    <h2>KasiGrill Menu Item Management</h2>
+
+    <form th:action="@{/vendor/dashboard/save}" th:object="${productForm}" method="POST">
+        <input type="hidden" id="productId" th:field="*{id}" />
+
+        <div class="form-inline">
+            <div class="field">
+                <label for="nameInput">Item Name</label>
+                <input type="text" id="nameInput" th:field="*{name}" placeholder="e.g., Wors Roll & Chips" required />
+            </div>
+            <div class="field">
+                <label for="priceInput">Price (ZAR)</label>
+                <input type="number" id="priceInput" th:field="*{price}" step="0.01" placeholder="0.00" required />
+            </div>
+            <button type="submit" id="submitBtn" class="btn-save">Add Item</button>
+        </div>
+    </form>
+
+    <table>
+        <thead>
+        <tr>
+            <th>Item Name</th>
+            <th>Price</th>
+            <th>Status</th>
+            <th>Actions</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="item : ${products}" th:if="${item.status != 'ARCHIVED'}">
+            <td th:text="${item.name}">Item Name</td>
+            <td th:text="'R ' + ${#numbers.formatDecimal(item.price, 1, 'COMMA', 2, 'POINT')}">R 0.00</td>
+            <td><span class="status-badge" th:text="${item.status ?: 'ACTIVE'}">ACTIVE</span></td>
+            <td class="actions-cell">
+                <!-- Safe Approach: Storing values in HTML5 data attributes and passing 'this' -->
+                <button type="button" class="btn-action-edit"
+                        th:data-id="${item.id}"
+                        th:data-name="${item.name}"
+                        th:data-price="${item.price}"
+                        onclick="editItem(this)">Edit</button>
+
+                <form th:action="@{/vendor/dashboard/delete/{id}(id=${item.id})}" method="POST" style="display:inline;" onsubmit="return confirm('Are you sure you want to remove this item from the vendor menu?');">
+                    <button type="submit" class="btn-action-delete">Delete</button>
+                </form>
+            </td>
+        </tr>
+        <tr th:if="${#lists.isEmpty(products)}">
+            <td colspan="4" style="text-align: center; color: #9ca3af; padding: 30px;">No menu items available.</td>
+        </tr>
+        </tbody>
+    </table>
+</div>
+
+<script>
+    // Updated JavaScript to safely read data from the clicked button element
+    function editItem(button) {
+        const id = button.getAttribute('data-id');
+        const name = button.getAttribute('data-name');
+        const price = button.getAttribute('data-price');
+
+        document.getElementById('productId').value = id;
+        document.getElementById('nameInput').value = name;
+        document.getElementById('priceInput').value = price;
+        document.getElementById('submitBtn').innerText = "Update Item";
+    }
+</script>
+
+</body>
+</html>
