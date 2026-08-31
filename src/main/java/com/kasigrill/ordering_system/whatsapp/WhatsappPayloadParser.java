@@ -31,86 +31,25 @@ public class WhatsappPayloadParser {
         }
     }
 
-    public WhatsappMessageDto parsePayload(Map<String, Object> payload) {
-        String customerNumber = extractPhoneNumber(payload);
-        String messageText = extractMessageText(payload);
-        String itemId = extractSelectedItemId(payload);
-
-        Map<String, Object> stringObjectMap = extractLocation(payload);
-        return new WhatsappMessageDto(customerNumber, messageText, stringObjectMap, itemId);
-    }
 
     @SuppressWarnings("unchecked")
-    private String extractMessageText(Map<String, Object> payload) {
-        try {
-            List<Map<String, Object>> entry = (List<Map<String, Object>>) payload.get("entry");
-            if (entry != null && !entry.isEmpty()) {
-                List<Map<String, Object>> changes = (List<Map<String, Object>>) entry.get(0).get("changes");
-                if (changes != null && !changes.isEmpty()) {
-                    Map<String, Object> value = (Map<String, Object>) changes.get(0).get("value");
-                    if (value != null && value.containsKey("messages")) {
-                        List<Map<String, Object>> messages = (List<Map<String, Object>>) value.get("messages");
-                        if (messages != null && !messages.isEmpty()) {
-                            Map<String, Object> message = messages.get(0);
+    public Map<String,Object> getMessage(Map<String, Object> payload){
 
-                            // Check if it's a standard text message
-                            if ("text".equals(message.get("type"))) {
-                                Map<String, Object> textBlock = (Map<String, Object>) message.get("text");
-                                return (String) textBlock.get("body");
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            System.err.println("Error extracting message text: " + e.getMessage());
+        List<Map<String, Object>> entries = (List<Map<String, Object>>) payload.get("entry");
+        Map<String, Object> changes = (Map<String, Object>) ((List<Map<String, Object>>) entries.getFirst().get("changes")).getFirst();
+        Map<String, Object> value = (Map<String, Object>) changes.get("value");
+        List<Map<String, Object>> messages = (List<Map<String, Object>>) value.get("messages");
+
+        // If there are no messages (e.g., it's a delivery status update), exit early
+        if (messages == null || messages.isEmpty()) {
+            return null;
         }
-        return null;
+
+        // 2. Get the first message object
+        Map<String, Object> message = messages.getFirst();
+        return message;
     }
 
-    @SuppressWarnings("unchecked")
-    private String extractPhoneNumber(Map<String, Object> payload) {
-        try {
-            List<Map<String, Object>> entry = (List<Map<String, Object>>) payload.get("entry");
-            if (entry != null && !entry.isEmpty()) {
-                List<Map<String, Object>> changes = (List<Map<String, Object>>) entry.get(0).get("changes");
-                if (changes != null && !changes.isEmpty()) {
-                    Map<String, Object> value = (Map<String, Object>) changes.get(0).get("value");
-                    if (value != null && value.containsKey("messages")) {
-                        List<Map<String, Object>> messages = (List<Map<String, Object>>) value.get("messages");
-                        if (messages != null && !messages.isEmpty()) {
-                            // This gets the customer's WhatsApp ID (phone number with country code)
-                            return (String) messages.get(0).get("from");
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            System.err.println("Error extracting phone number: " + e.getMessage());
-        }
-        return null;
-    }
-
-    @SuppressWarnings("unchecked")
-    private String extractSelectedItemId(Map<String, Object> payload) {
-        try {
-            List<Map<String, Object>> entry = (List<Map<String, Object>>) payload.get("entry");
-            Map<String, Object> value = (Map<String, Object>) ((List<Map<String, Object>>) entry.get(0).get("changes")).get(0).get("value");
-            List<Map<String, Object>> messages = (List<Map<String, Object>>) value.get("messages");
-            Map<String, Object> message = messages.getFirst();
-
-            if ("interactive".equals(message.get("type"))) {
-                Map<String, Object> interactive = (Map<String, Object>) message.get("interactive");
-                if (interactive != null && "list_reply".equals(interactive.get("type"))) {
-                    Map<String, Object> listReply = (Map<String, Object>) interactive.get("list_reply");
-                    return listReply != null ? (String) listReply.get("id") : null;
-                }
-            }
-        } catch (Exception e) {
-            // Silently fall through if structure varies
-        }
-        return null;
-    }
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> extractLocation(Map<String, Object> payload) {

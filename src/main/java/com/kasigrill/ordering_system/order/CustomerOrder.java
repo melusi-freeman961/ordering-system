@@ -2,12 +2,14 @@ package com.kasigrill.ordering_system.order;
 
 import com.kasigrill.ordering_system.customer.Customer;
 import com.kasigrill.ordering_system.customer.CustomerSession;
-import com.kasigrill.ordering_system.telegram.VendorMessageData;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.ToString;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Data
@@ -19,6 +21,12 @@ public class CustomerOrder {
     @Id
     Long id;
 
+    @Column(nullable = false)
+    int orderNumber;
+
+    @Column(nullable = false)
+    BigDecimal orderAmount;
+
     @Column(
             nullable = false
     )
@@ -29,7 +37,7 @@ public class CustomerOrder {
             optional = false, cascade = CascadeType.PERSIST
     )
     @JoinColumn(
-            name = "contact"
+            name = "customerId"
     )
     Customer customer;
     @Column(
@@ -38,8 +46,11 @@ public class CustomerOrder {
     LocalDateTime createdDate = LocalDateTime.now();
 
 
-    @OneToOne(mappedBy = "order")
-    OrderItem orderItem;
+    @OneToMany(
+            mappedBy = "order"
+    )
+    @ToString.Exclude
+    List<OrderItem> orderItems=new ArrayList<>();
 
 
     @OneToOne(
@@ -47,6 +58,5 @@ public class CustomerOrder {
     )
     @ToString.Exclude
     CustomerSession session;
-    @Embedded
-    private VendorMessageData vendorMessageData;
+
 }

@@ -1,6 +1,8 @@
 package com.kasigrill.ordering_system.whatsapp;
 
+import com.kasigrill.ordering_system.customer.CustomerMessage;
 import com.kasigrill.ordering_system.menuitem.MenuItemDto;
+import com.kasigrill.ordering_system.order.OrderDto;
 import com.kasigrill.ordering_system.order.OrderStatus;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
@@ -10,6 +12,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -20,6 +24,7 @@ public class WhatsAppGateway {
     private String phoneNumberId;
     @Value("${whatsapp.access.token}")
     private String accessToken;
+
 
     public boolean sendMessage(Map<String, Object> payload) {
 
@@ -54,24 +59,14 @@ public class WhatsAppGateway {
 
     }
 
-    public boolean sendOrderStatus(String status, String customerNumber, String orderNumber) {
-        String text = "";
+    public void sendOrderConfirmation(String customerNumber,int orderNumber) {
 
-        if (status.equalsIgnoreCase(OrderStatus.REJECT.name())) {
-            text = "Your order " + orderNumber + " has been rejected!";
-        } else if (status.equalsIgnoreCase(OrderStatus.PLACED.name())) {
-            text = "Your order " + orderNumber + " has been placed!";
-        } else if (status.equalsIgnoreCase(OrderStatus.READY.name())) {
-            text = "Your order " + orderNumber + " is ready for collection!";
-        } else if (status.equalsIgnoreCase(OrderStatus.PREPARING.name())) {
-            text = "Your order " + orderNumber + " is being prepared!";
-        }
-        return sendMessage(Map.of(
+        sendMessage(Map.of(
                 "messaging_product", "whatsapp",
                 "recipient_type", "individual",
                 "to", customerNumber,
                 "type", "text",
-                "text", Map.of("body", "\uD83E\uDD57 " + text)
+                "text", Map.of("body", "Your order number is #" + orderNumber+", keep an eye on the driver.")
         ));
 
     }
@@ -94,10 +89,84 @@ public class WhatsAppGateway {
                 "messaging_product", "whatsapp",
                 "to", customerNumber,
                 "type", "text",
-                "text", Map.of("body", "Welcome to Kasi Grill! \uD83C\uDF1F What should we call you?")
+                "text", Map.of("body", "\uD83C\uDF1F We have your order, what should we call you?")
         );
 
         return sendMessage(closedMessage);
+    }
+
+    public Map<String, Object> createGreetingMenu(String recipientNumber) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("messaging_product", "whatsapp");
+        payload.put("to", recipientNumber);
+        payload.put("type", "interactive");
+
+        Map<String, Object> interactive = new HashMap<>();
+        interactive.put("type", "button");
+
+        Map<String, String> body = new HashMap<>();
+        body.put("text", "Hi, Welcome, Wamukelekile, Welkom to GoBites!\nWhat would you like to do today?");
+        interactive.put("body", body);
+
+        Map<String, String> footer = new HashMap<>();
+        footer.put("text", " You can type Menu at any time to return to this screen.");
+        interactive.put("footer", footer);
+
+        Map<String, Object> action = new HashMap<>();
+        List<Map<String, Object>> buttons = new ArrayList<>();
+
+        buttons.add(createReplyButton("btn_view_menu", "🍽️ View Menu"));
+        buttons.add(createReplyButton("btn_my_orders", "📋 My Orders"));
+        buttons.add(createReplyButton("btn_help", "ℹ️ Help"));
+
+        action.put("buttons", buttons);
+        interactive.put("action", action);
+        payload.put("interactive", interactive);
+
+        return payload;
+    }
+
+    public Map<String, Object> sendFullCatalog(String recipientNumber) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("messaging_product", "whatsapp");
+        payload.put("to", recipientNumber);
+        payload.put("type", "interactive");
+
+        Map<String, Object> interactive = new HashMap<>();
+        // Tell WhatsApp to open the full catalog
+        interactive.put("type", "catalog_message");
+
+        // The message bubble text
+        Map<String, String> body = new HashMap<>();
+        body.put("text", "🍔 Welcome to eas! Tap below to view our full menu.");
+        interactive.put("body", body);
+
+        // Meta automatically pulls the catalog linked to your WhatsApp number
+        Map<String, Object> action = new HashMap<>();
+        action.put("name", "catalog_message");
+
+        // Optional: Set a specific item's image to show on the message bubble
+//        Map<String, Object> parameters = new HashMap<>();
+//        parameters.put("thumbnail_product_retailer_id", "v7933et4vv");
+//        action.put("parameters", parameters);
+
+        interactive.put("action", action);
+        payload.put("interactive", interactive);
+
+        return payload;
+    }
+
+
+    private Map<String, Object> createReplyButton(String id, String title) {
+        Map<String, Object> button = new HashMap<>();
+        button.put("type", "reply");
+
+        Map<String, String> reply = new HashMap<>();
+        reply.put("id", id);
+        reply.put("title", title);
+
+        button.put("reply", reply);
+        return button;
     }
 
     public boolean requestLocation(String customerNumber) {
@@ -105,17 +174,14 @@ public class WhatsAppGateway {
         Map<String, Object> locationRequestMessage = Map.of(
                 "messaging_product", "whatsapp",
                 "to", customerNumber,
-                "type", "text",
-                "text", Map.of("body",
-                        "🛵 *Awesome , we've got your order details!*\n\n" +
-                                "To ensure our motorbike rider brings your food straight to your doorstep sizzling hot, " +
-                                "please send us your *Live Location* or *Current Location*.\n\n" +
-                                "📎 *How to do it:*\n" +
-                                "1. Tap the *Attach* icon (the paperclip 📎 or plus `+` sign next to your text box).\n" +
-                                "2. Select *Location* 📍.\n" +
-                                "3. Tap *Send Your Current Location* or *Share Live Location*.")
-                , "biz_opaque_callback_data", "QUESTION_ASK_LOCATION"
+                "type", "interactive",
+                "interactive", Map.of(
+                        "type", "location_request_message",
+                        "body", Map.of("text", "Please share your location with us to make the delivery easy."),
+                        "action", Map.of("name", "send_location")
+                )
         );
+
         return sendMessage(locationRequestMessage);
     }
 
@@ -132,7 +198,9 @@ public class WhatsAppGateway {
     public boolean menuResponseMessage(String messageText, String customerNumber, List<MenuItemDto> menu) {
 
         if (menu.isEmpty()) {
-            menuEmptyNotification(customerNumber);
+//            menuEmptyNotification(customerNumber);
+
+            sendMessage(createGreetingMenu(customerNumber));
         }
 
         List<Map<String, Object>> rows = menu.stream()
@@ -187,6 +255,147 @@ public class WhatsAppGateway {
                 "to", customerNumber,
                 "type", "text",
                 "text", Map.of("body", "👋 Thanks for contacting Kasi Grill! We are currently updating our menu items. Please check back in a few minutes! 🔥")
+        ));
+    }
+
+    public boolean publishOrders(List<OrderDto> orders, String customerNumber) {
+
+
+        boolean sent = false;
+
+        for (OrderDto order : orders) {
+
+            String orderNum = String.valueOf(order.orderNumber());
+            String status = order.status();
+            String date = String.valueOf(order.dateTime());
+
+            String message = "Order " + orderNum + "was placed on " + date + " and its current status is: " + status + ".";
+            sent = sendMessage(Map.of(
+                    "messaging_product", "whatsapp",
+                    "recipient_type", "individual",
+                    "to", customerNumber,
+                    "type", "text",
+                    "text", Map.of("body", message)
+            ));
+        }
+        return sent;
+    }
+
+    public boolean publishHelpLine(String helpLine, String customerNumber) {
+
+
+        return sendMessage(Map.of(
+                "messaging_product", "whatsapp",
+                "recipient_type", "individual",
+                "to", customerNumber,
+                "type", "text",
+                "text", Map.of("body", "Got questions? Give us a call at " + helpLine + " — we're happy to help!")
+        ));
+    }
+
+    public boolean publishNoOrderNotification(String customerNumber) {
+        return sendMessage(Map.of(
+                "messaging_product", "whatsapp",
+                "recipient_type", "individual",
+                "to", customerNumber,
+                "type", "text",
+                "text", Map.of("body", "Looks like you haven't placed any orders yet!")
+        ));
+    }
+
+    public boolean publishNumberPermission(CustomerMessage message) {
+
+        String name = (String) message.getCustomerMessage();
+
+        return sendMessage(Map.of(
+                "messaging_product", "whatsapp",
+                "recipient_type", "individual",
+                "to", message.getCustomerIdentifier(),
+                "type", "text",
+                "text", Map.of("body", "Ok " + name + " can we use this number to send you updates?\n\n1️⃣ Yes\n2️⃣ No")
+        ));
+
+
+    }
+
+    public void requestCustomerNumber(String customerNumber) {
+
+        sendMessage(Map.of(
+                "messaging_product", "whatsapp",
+                "recipient_type", "individual",
+                "to", customerNumber,
+                "type", "text",
+                "text", Map.of("body", "No problem! 📱 Please reply with the phone number you would prefer us to use for updates (e.g., 0712345678).")
+        ));
+
+    }
+
+    public void publishNumberValidConfirmation(String customerNumber, String preferredNumber) {
+        sendMessage(Map.of(
+                "messaging_product", "whatsapp",
+                "recipient_type", "individual",
+                "to", customerNumber,
+                "type", "text",
+                "text", Map.of("body", "Got it! We've updated your preferred contact number to " + preferredNumber + " ✅")
+        ));
+    }
+
+    public void publishNumberValidationFailure(String customerNumber) {
+        sendMessage(Map.of(
+                "messaging_product", "whatsapp",
+                "recipient_type", "individual",
+                "to", customerNumber,
+                "type", "text",
+                "text", Map.of("body", "That doesn't look like a valid South African cell number. Please try again (e.g., 0712345678).")
+        ));
+    }
+
+    public void publishLocationReceivedConfirmation(String customerNumber) {
+        sendMessage(Map.of(
+                "messaging_product", "whatsapp",
+                "recipient_type", "individual",
+                "to", customerNumber,
+                "type", "text",
+                "text", Map.of("body", "Good news we received your location.")
+        ));
+    }
+
+    public boolean publishTermination(String customerNumber) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("messaging_product", "whatsapp");
+        payload.put("to", customerNumber); // Replace with dynamic number
+        payload.put("type", "interactive");
+
+        Map<String, Object> interactive = new HashMap<>();
+        interactive.put("type", "button");
+
+        interactive.put("body", Map.of("text", "Would you like to cancel or go back?"));
+
+        interactive.put("action", Map.of(
+                "buttons", new Object[]{
+                        Map.of(
+                                "type", "reply",
+                                "reply", Map.of("id", "btn_terminate", "title", "Terminate")
+                        ),
+                        Map.of(
+                                "type", "reply",
+                                "reply", Map.of("id", "btn_back_menu", "title", "Back to Menu")
+                        )
+                }
+        ));
+
+        payload.put("interactive", interactive);
+        return sendMessage(payload);
+    }
+
+    public void confirmTermination(String customerNumber) {
+
+        sendMessage(Map.of(
+                "messaging_product", "whatsapp",
+                "recipient_type", "individual",
+                "to", customerNumber,
+                "type", "text",
+                "text", Map.of("body", " Process terminated. Let us know when you are ready to order again by typing Menu! \uD83D\uDC4B")
         ));
     }
 }

@@ -20,15 +20,25 @@ public class MenuItem {
     Long id;
 
     @Column(nullable = false)
-    String name;
+    String title;
 
     @Column(nullable = false)
     boolean available;
 
+    @Column(nullable = false)
     BigDecimal price;
 
     @Column(nullable = false)
-    String status;
+    String disc;
+
+    @Column(nullable = false)
+    String sku;
+
+    @Column(nullable = false)
+    String imgUrl;
+
+    @Column(nullable = false)
+    String websiteLink;
 
     @OneToMany(
             mappedBy = "menuItem"

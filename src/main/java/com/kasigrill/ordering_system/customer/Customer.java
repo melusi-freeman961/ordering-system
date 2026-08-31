@@ -41,9 +41,7 @@ public class Customer {
     @ToString.Exclude
     CustomerSession session;
 
-    @OneToOne(cascade = CascadeType.ALL)
-    @JoinColumn(name = "identifier_channel_id")
-    @ToString.Exclude
-    CustomerIdentifier identifier;
+    @Column(nullable = false)
+    String customerIdentifierId;
 
 }

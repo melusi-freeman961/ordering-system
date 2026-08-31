@@ -15,13 +15,13 @@ public class CustomerSession {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private CustomerSessionState state;
+    private BotState state;
 
     @OneToOne(
             optional = false, cascade = CascadeType.ALL
     )
     @JoinColumn(
-            name = "customer"
+            name = "customerId"
     )
     @ToString.Exclude
     Customer customer;

@@ -14,6 +14,14 @@ public class OrderItem {
     @Id
     Long id;
 
+    int quantity;
+    @ManyToOne(
+            cascade = CascadeType.PERSIST
+    )
+    @JoinColumn(
+            name = "order_id"
+    )
+    CustomerOrder order;
     @ManyToOne(
             optional = false
     )
@@ -22,9 +30,5 @@ public class OrderItem {
             , nullable = false
     )
     private MenuItem menuItem;
-
-    @OneToOne(optional = false)
-    @JoinColumn(name = "order_id", nullable = false)
-    CustomerOrder order;
 
 }

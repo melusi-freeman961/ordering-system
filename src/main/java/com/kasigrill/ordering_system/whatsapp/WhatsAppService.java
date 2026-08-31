@@ -1,8 +1,9 @@
 package com.kasigrill.ordering_system.whatsapp;
 
 import com.kasigrill.ordering_system.config.CustomerNotificationService;
-import com.kasigrill.ordering_system.customer.IncomingCustomerMessage;
-import com.kasigrill.ordering_system.menuitem.MenuItemDto;
+import com.kasigrill.ordering_system.customer.CustomerMessage;
+import com.kasigrill.ordering_system.customer.CustomerMessageImp;
+import com.kasigrill.ordering_system.order.OrderDto;
 import com.kasigrill.ordering_system.resturant.StoreService;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
@@ -18,6 +19,7 @@ public class WhatsAppService implements CustomerNotificationService {
     private final WhatsappPayloadParser payloadParser;
     private final WhatsAppGateway whatsAppGateway;
 
+
     public WhatsAppService(@Lazy StoreService storeService
             , WhatsAppGateway whatsAppGateway
             , WhatsappPayloadParser payloadParser
@@ -27,22 +29,172 @@ public class WhatsAppService implements CustomerNotificationService {
         this.whatsAppGateway = whatsAppGateway;
     }
 
+    @SuppressWarnings("unchecked")
     public void deserializeAndProcessWhatsappMessage(Map<String, Object> payload) {
         boolean updatedStatus = payloadParser.isStatusUpdatePayload(payload);
 
         if (updatedStatus) {
             return;
         }
-        WhatsappMessageDto deserializedMessage = payloadParser.parsePayload(payload);
 
-        storeService.executeCustomerMessage(deserializedMessage);
+        Map<String, Object> message = payloadParser.getMessage(payload);
+        System.out.println("RAW MESSAGE MAP: " + message);
 
+        String messageType = (String) message.get("type");
+        System.out.println("EXTRACTED TYPE: " + messageType);
+        String senderNumber = (String) message.get("from");
+
+        if (messageType.isBlank()) return;
+
+        CustomerMessageImp csMessage = new CustomerMessageImp();
+        csMessage.customerIdentifierId = senderNumber;
+
+        System.out.println(messageType);
+        System.out.println(senderNumber);
+        if(messageType.equalsIgnoreCase("location")){
+            int q=1;
+        }
+        switch (messageType) {
+            case "text" -> {
+
+
+                Map<String, Object> txtBody = (Map<String, Object>) message.get("text");
+                String txtMessage = ((String) txtBody.get("body")).trim();
+
+                if (txtMessage.equalsIgnoreCase("GoBite")) {
+                    csMessage.message = "GoBite";
+
+                    storeService.publishCustomerMessage(csMessage);
+                } else if (txtMessage.equalsIgnoreCase("Menu")) {
+
+                    storeService.menuRequestedAgain(csMessage);
+
+                } else if (txtMessage.equalsIgnoreCase("1")) {
+                    csMessage.message = senderNumber;
+                    storeService.publishCustomerMessage(csMessage);
+                } else if (txtMessage.equalsIgnoreCase("2")) {
+                    whatsAppGateway.requestCustomerNumber(senderNumber);
+                } else {
+
+                    String NAME_REGEX = "^[\\p{L}' -]{2,50}$";
+                    String digitsOnly = txtMessage.replaceAll("[^0-9]", "");
+
+
+                    if (txtMessage.matches(NAME_REGEX) && digitsOnly.isEmpty()) {
+                        csMessage.message = txtMessage;
+                        storeService.publishCustomerMessage(csMessage);
+                    } else {
+                        String num = txtMessage.trim().replaceAll("\\s+", "");
+                        String preferredNumber = isNumberValid(senderNumber, num);
+
+                        if (!preferredNumber.isBlank()) {
+                            csMessage.message = preferredNumber;
+                            storeService.publishCustomerMessage(csMessage);
+                        }
+                    }
+
+
+                }
+            }
+            case "location" -> {
+
+                Map<String, Object> locationData = (Map<String, Object>) message.get("location");
+
+                Double latitude = (Double) locationData.get("latitude");
+                Double longitude = (Double) locationData.get("longitude");
+
+                // 3. Generate the driver maps link and reply
+                String driverMapsLink = "https://www.google.com/maps/search/?api=1&query=" + latitude + "," + longitude;
+
+                whatsAppGateway.publishLocationReceivedConfirmation(senderNumber);
+                csMessage.message = driverMapsLink;
+
+                storeService.publishCustomerMessage(csMessage);
+                OrderDto orderDetails = storeService.getOrderDetails(senderNumber);
+
+                if(orderDetails!=null){
+                    whatsAppGateway.sendOrderConfirmation(senderNumber,orderDetails.orderNumber());
+                }
+            }
+            case "interactive" -> {
+
+                String id = retrieveBtnId(message);
+
+                if (id.equalsIgnoreCase("btn_terminate")) {
+                    boolean terminated = storeService.terminateProcess(senderNumber);
+
+                    if (terminated) {
+                        whatsAppGateway.confirmTermination(senderNumber);
+                    }
+                } else if (id.equalsIgnoreCase("btn_back_menu")) {
+                    storeService.backToManu(senderNumber);
+                } else {
+                    csMessage.message = message;
+                    storeService.publishCustomerMessage(csMessage);
+                }
+
+            }
+            case "order" -> {
+
+                Map<String, Object> orderObj = (Map<String, Object>) message.get("order");
+
+                if (orderObj != null && orderObj.containsKey("product_items")) {
+                    // Extract the list of items from the shopping cart
+                    List<Map<String, Object>> productItems = (List<Map<String, Object>>) orderObj.get("product_items");
+
+                    // Loop through the cart to extract the SKUs and quantities
+                    for (Map<String, Object> item : productItems) {
+
+                        String sku = (String) item.get("product_retailer_id");
+                        String quantity = String.valueOf(item.get("quantity"));
+                        storeService.addOderItem(senderNumber, sku, Integer.parseInt(quantity));
+                    }
+                    storeService.publishOrder(senderNumber);
+                }
+            }
+        }
 
     }
 
     @Override
-    public boolean sendMenu(IncomingCustomerMessage message, List<MenuItemDto> menu) {
-        return whatsAppGateway.menuResponseMessage(message.getMessage(), message.getChannelId(), menu);
+    public boolean publishTerminationConfirmation(String customerNumber) {
+        return whatsAppGateway.publishTermination(customerNumber);
+    }
+
+    private String isNumberValid(String customerNumber, String preferredNumber) {
+        if (preferredNumber.matches("^(\\+27|27|0)[6-8][0-9]{8}$")) {
+
+            String standardizedNumber = preferredNumber;
+            if (standardizedNumber.startsWith("0")) {
+                standardizedNumber = "27" + standardizedNumber.substring(1);
+            } else if (standardizedNumber.startsWith("+27")) {
+                standardizedNumber = standardizedNumber.substring(1);
+            }
+
+
+            whatsAppGateway.publishNumberValidConfirmation(customerNumber, standardizedNumber);
+            return standardizedNumber;
+
+        } else {
+            // Validation failed
+            whatsAppGateway.publishNumberValidationFailure(customerNumber);
+            return "";
+        }
+    }
+
+
+    @SuppressWarnings("unchecked")
+    private String retrieveBtnId(Map<String, Object> message) {
+        // Now we know it's safe to look for the "interactive" object
+        Map<String, Object> interactiveObj = (Map<String, Object>) message.get("interactive");
+
+        // Check if it's specifically a button reply
+        if ("button_reply".equals(interactiveObj.get("type"))) {
+            Map<String, Object> buttonReply = (Map<String, Object>) interactiveObj.get("button_reply");
+            return (String) buttonReply.get("id");
+
+        }
+        return "";
     }
 
     @Override
@@ -52,39 +204,65 @@ public class WhatsAppService implements CustomerNotificationService {
 
 
     @Override
-    public void publishUnexpectedMessageResponse(String channelId) {
-        whatsAppGateway.requestAnotherOrder(channelId);
+    public boolean sendMainMenu(String customerNumber) {
+        Map<String, Object> payload = whatsAppGateway.createGreetingMenu(customerNumber);
+        return whatsAppGateway.sendMessage(payload);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Override
+    public boolean handleMainManuInput(CustomerMessage scMessage) {
+
+        CustomerMessageImp messageImp = (CustomerMessageImp) scMessage;
+
+        Map<String, Object> message = (Map<String, Object>) messageImp.message;
+
+        String id = retrieveBtnId(message);
+
+        return switch (id) {
+            case "btn_view_menu" -> {
+                Map<String, Object> payload = whatsAppGateway.sendFullCatalog(messageImp.getCustomerIdentifier());
+                yield whatsAppGateway.sendMessage(payload);
+            }
+            case "btn_my_orders" -> viewOrders(messageImp.getCustomerIdentifier());
+            case "btn_help" -> publishHelpLine(messageImp.getCustomerIdentifier());
+            default -> false;
+        };
+
     }
 
     @Override
-    public boolean getCustomerNumber(String channelId) {
-        return whatsAppGateway.getCustomerNumber(channelId);
+    public boolean sendHelp(String helpNumber, String customerIdentifier) {
+        return whatsAppGateway.publishHelpLine(helpNumber, customerIdentifier);
     }
 
     @Override
-    public void publishEmptyMenu(String customerNumber) {
-        whatsAppGateway.menuEmptyNotification(customerNumber);
+    public boolean requestMobileNumber(CustomerMessage message) {
+        return whatsAppGateway.publishNumberPermission(message);
     }
 
     @Override
-    public boolean getName(String customerNumber) {
-        return whatsAppGateway.requestCustomerName(customerNumber);
+    public boolean requestLocation(String customerIdentifier) {
+        return whatsAppGateway.requestLocation(customerIdentifier);
     }
 
     @Override
-    public boolean publishAnotherOrderRequest(String channelId) {
-        return whatsAppGateway.requestAnotherOrder(channelId);
+    public boolean requestCustomerName(String customerIdentifier) {
+        return whatsAppGateway.requestCustomerName(customerIdentifier);
     }
 
-    @Override
-    public boolean sendOrderStatus(String status, String channelId,String orderNumber) {
-       return whatsAppGateway.sendOrderStatus(status, channelId,orderNumber);
+    private boolean publishHelpLine(String customerIdentifier) {
+        return storeService.publishHelp(customerIdentifier);
     }
 
+    private boolean viewOrders(String customerIdentifier) {
+        List<OrderDto> orders = storeService.publishCustomerOrders(customerIdentifier);
 
-    @Override
-    public boolean getLocation(String customerNumber) {
-        return whatsAppGateway.requestLocation(customerNumber);
+        if (orders == null || orders.isEmpty()) {
+            return whatsAppGateway.publishNoOrderNotification(customerIdentifier);
+        }
+        return whatsAppGateway.publishOrders(orders, customerIdentifier);
     }
+
 
 }
