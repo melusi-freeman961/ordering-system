@@ -3,7 +3,6 @@ package com.kasigrill.ordering_system.whatsapp;
 import com.kasigrill.ordering_system.customer.CustomerMessage;
 import com.kasigrill.ordering_system.menuitem.MenuItemDto;
 import com.kasigrill.ordering_system.order.OrderDto;
-import com.kasigrill.ordering_system.order.OrderStatus;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -59,14 +58,14 @@ public class WhatsAppGateway {
 
     }
 
-    public void sendOrderConfirmation(String customerNumber,int orderNumber) {
+    public void sendOrderConfirmation(String customerNumber, int orderNumber) {
 
         sendMessage(Map.of(
                 "messaging_product", "whatsapp",
                 "recipient_type", "individual",
                 "to", customerNumber,
                 "type", "text",
-                "text", Map.of("body", "Your order number is #" + orderNumber+", keep an eye on the driver.")
+                "text", Map.of("body", "Your order number is #" + orderNumber + ", keep an eye on the driver.")
         ));
 
     }
@@ -89,7 +88,8 @@ public class WhatsAppGateway {
                 "messaging_product", "whatsapp",
                 "to", customerNumber,
                 "type", "text",
-                "text", Map.of("body", "\uD83C\uDF1F We have your order, what should we call you?")
+                "text", Map.of("body", "\uD83C\uDF1F We have your order, what should we call you?"),
+                "biz_opaque_callback_data", "text_name"
         );
 
         return sendMessage(closedMessage);
@@ -306,13 +306,20 @@ public class WhatsAppGateway {
     public boolean publishNumberPermission(CustomerMessage message) {
 
         String name = (String) message.getCustomerMessage();
-
+        sendMessage(Map.of(
+                "messaging_product", "whatsapp",
+                "recipient_type", "individual",
+                "to",  message.getCustomerIdentifier(),
+                "type", "text",
+                "text", Map.of("body", "I like your name ❤\uFE0F \uD83D\uDE05!")
+        ));
         return sendMessage(Map.of(
                 "messaging_product", "whatsapp",
                 "recipient_type", "individual",
                 "to", message.getCustomerIdentifier(),
                 "type", "text",
-                "text", Map.of("body", "Ok " + name + " can we use this number to send you updates?\n\n1️⃣ Yes\n2️⃣ No")
+                "text", Map.of("body", "Ok " + name + " can we use this number to send you updates?\n\n1️⃣ Yes\n2️⃣ No"),
+                "biz_opaque_callback_data", "text_number"
         ));
 
 

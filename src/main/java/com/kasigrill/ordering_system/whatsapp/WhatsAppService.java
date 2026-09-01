@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class WhatsAppService implements CustomerNotificationService {
@@ -18,6 +19,7 @@ public class WhatsAppService implements CustomerNotificationService {
     private final StoreService storeService;
     private final WhatsappPayloadParser payloadParser;
     private final WhatsAppGateway whatsAppGateway;
+    private final Map<String, String> activeSessionsLastStatusMessageId = new ConcurrentHashMap<>();
 
 
     public WhatsAppService(@Lazy StoreService storeService
@@ -31,9 +33,17 @@ public class WhatsAppService implements CustomerNotificationService {
 
     @SuppressWarnings("unchecked")
     public void deserializeAndProcessWhatsappMessage(Map<String, Object> payload) {
-        boolean updatedStatus = payloadParser.isStatusUpdatePayload(payload);
+        String updatedStatus = payloadParser.isStatusUpdatePayload(payload);
 
-        if (updatedStatus) {
+        if (updatedStatus != null) {
+
+            if (updatedStatus.isBlank()) return;
+
+            String recipient_number = payloadParser.getNumberFromStatus(payload);
+            if (recipient_number == null) return;
+            if (recipient_number.isBlank()) return;
+
+            activeSessionsLastStatusMessageId.put(recipient_number, updatedStatus);
             return;
         }
 
@@ -51,9 +61,7 @@ public class WhatsAppService implements CustomerNotificationService {
 
         System.out.println(messageType);
         System.out.println(senderNumber);
-        if(messageType.equalsIgnoreCase("location")){
-            int q=1;
-        }
+
         switch (messageType) {
             case "text" -> {
 
@@ -76,14 +84,14 @@ public class WhatsAppService implements CustomerNotificationService {
                     whatsAppGateway.requestCustomerNumber(senderNumber);
                 } else {
 
-                    String NAME_REGEX = "^[\\p{L}' -]{2,50}$";
-                    String digitsOnly = txtMessage.replaceAll("[^0-9]", "");
+                    String textId = activeSessionsLastStatusMessageId.get(senderNumber);
+                    if (textId == null || textId.isBlank()) return;
 
 
-                    if (txtMessage.matches(NAME_REGEX) && digitsOnly.isEmpty()) {
+                    if (textId.equalsIgnoreCase("text_name")) {
                         csMessage.message = txtMessage;
                         storeService.publishCustomerMessage(csMessage);
-                    } else {
+                    } else if (textId.equalsIgnoreCase("text_number")) {
                         String num = txtMessage.trim().replaceAll("\\s+", "");
                         String preferredNumber = isNumberValid(senderNumber, num);
 
@@ -92,8 +100,6 @@ public class WhatsAppService implements CustomerNotificationService {
                             storeService.publishCustomerMessage(csMessage);
                         }
                     }
-
-
                 }
             }
             case "location" -> {
@@ -112,8 +118,8 @@ public class WhatsAppService implements CustomerNotificationService {
                 storeService.publishCustomerMessage(csMessage);
                 OrderDto orderDetails = storeService.getOrderDetails(senderNumber);
 
-                if(orderDetails!=null){
-                    whatsAppGateway.sendOrderConfirmation(senderNumber,orderDetails.orderNumber());
+                if (orderDetails != null) {
+                    whatsAppGateway.sendOrderConfirmation(senderNumber, orderDetails.orderNumber());
                 }
             }
             case "interactive" -> {
@@ -124,6 +130,7 @@ public class WhatsAppService implements CustomerNotificationService {
                     boolean terminated = storeService.terminateProcess(senderNumber);
 
                     if (terminated) {
+                        activeSessionsLastStatusMessageId.remove(senderNumber);
                         whatsAppGateway.confirmTermination(senderNumber);
                     }
                 } else if (id.equalsIgnoreCase("btn_back_menu")) {
