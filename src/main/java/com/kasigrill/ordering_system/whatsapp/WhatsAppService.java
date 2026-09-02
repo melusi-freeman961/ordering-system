@@ -78,9 +78,12 @@ public class WhatsAppService implements CustomerNotificationService {
                     storeService.menuRequestedAgain(csMessage);
 
                 } else if (txtMessage.equalsIgnoreCase("1")) {
+
+                    activeSessionsLastStatusMessageId.put(senderNumber, "text_number");
                     csMessage.message = senderNumber;
                     storeService.publishCustomerMessage(csMessage);
                 } else if (txtMessage.equalsIgnoreCase("2")) {
+                    activeSessionsLastStatusMessageId.put(senderNumber, "text_number2");
                     whatsAppGateway.requestCustomerNumber(senderNumber);
                 } else {
 
@@ -91,13 +94,37 @@ public class WhatsAppService implements CustomerNotificationService {
                     if (textId.equalsIgnoreCase("text_name")) {
                         csMessage.message = txtMessage;
                         storeService.publishCustomerMessage(csMessage);
-                    } else if (textId.equalsIgnoreCase("text_number")) {
+                    } else if (textId.equalsIgnoreCase("text_number1")) {
+
+                        if (!txtMessage.equalsIgnoreCase("1") && !txtMessage.equalsIgnoreCase("2")) {
+                            whatsAppGateway.publishInvalidOptionsMessage(senderNumber);
+                        } else {
+                            String num = txtMessage.trim().replaceAll("\\s+", "");
+                            String preferredNumber = isNumberValid(senderNumber, num);
+
+                            if (!preferredNumber.isBlank()) {
+                                csMessage.message = preferredNumber;
+                                storeService.publishCustomerMessage(csMessage);
+                            }
+                        }
+                    } else if (textId.equalsIgnoreCase("text_number2")) {
+
                         String num = txtMessage.trim().replaceAll("\\s+", "");
                         String preferredNumber = isNumberValid(senderNumber, num);
 
                         if (!preferredNumber.isBlank()) {
                             csMessage.message = preferredNumber;
                             storeService.publishCustomerMessage(csMessage);
+                        }
+
+                    } else {
+                        if (textId.equalsIgnoreCase("interactive_main_menu")) {
+                            whatsAppGateway.publishInvalidMainMenuOption(senderNumber);
+                        } else if (textId.equalsIgnoreCase("catalog")) {
+                            whatsAppGateway.publishInvalidOnViewCatalog(senderNumber);
+                        }
+                        else if (textId.equalsIgnoreCase("text_location")) {
+                            whatsAppGateway.publishInvalidLocation(senderNumber);
                         }
                     }
                 }
@@ -113,14 +140,16 @@ public class WhatsAppService implements CustomerNotificationService {
                 String driverMapsLink = "https://www.google.com/maps/search/?api=1&query=" + latitude + "," + longitude;
 
                 whatsAppGateway.publishLocationReceivedConfirmation(senderNumber);
-                csMessage.message = driverMapsLink;
-
-                storeService.publishCustomerMessage(csMessage);
                 OrderDto orderDetails = storeService.getOrderDetails(senderNumber);
 
                 if (orderDetails != null) {
                     whatsAppGateway.sendOrderConfirmation(senderNumber, orderDetails.orderNumber());
                 }
+
+                csMessage.message = driverMapsLink;
+                storeService.publishCustomerMessage(csMessage);
+
+
             }
             case "interactive" -> {
 
@@ -228,8 +257,8 @@ public class WhatsAppService implements CustomerNotificationService {
 
         return switch (id) {
             case "btn_view_menu" -> {
-                Map<String, Object> payload = whatsAppGateway.sendFullCatalog(messageImp.getCustomerIdentifier());
-                yield whatsAppGateway.sendMessage(payload);
+                Map<String, Object> payload = whatsAppGateway.createFullCatalog(messageImp.getCustomerIdentifier());
+                yield whatsAppGateway.publishCatalog(payload);
             }
             case "btn_my_orders" -> viewOrders(messageImp.getCustomerIdentifier());
             case "btn_help" -> publishHelpLine(messageImp.getCustomerIdentifier());

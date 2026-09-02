@@ -1,7 +1,6 @@
 package com.kasigrill.ordering_system.whatsapp;
 
 import com.kasigrill.ordering_system.customer.CustomerMessage;
-import com.kasigrill.ordering_system.menuitem.MenuItemDto;
 import com.kasigrill.ordering_system.order.OrderDto;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
@@ -70,18 +69,6 @@ public class WhatsAppGateway {
 
     }
 
-    public boolean requestAnotherOrder(String customerNumber) {
-
-        return sendMessage(Map.of(
-                "messaging_product", "whatsapp",
-                "recipient_type", "individual",
-                "to", customerNumber,
-                "type", "text",
-                "text", Map.of("body", "Press 1 if you want to order something else.")
-        ));
-
-    }
-
     public boolean requestCustomerName(String customerNumber) {
 
         Map<String, Object> closedMessage = Map.of(
@@ -100,6 +87,7 @@ public class WhatsAppGateway {
         payload.put("messaging_product", "whatsapp");
         payload.put("to", recipientNumber);
         payload.put("type", "interactive");
+        payload.put("biz_opaque_callback_data","interactive_main_menu");
 
         Map<String, Object> interactive = new HashMap<>();
         interactive.put("type", "button");
@@ -126,11 +114,16 @@ public class WhatsAppGateway {
         return payload;
     }
 
-    public Map<String, Object> sendFullCatalog(String recipientNumber) {
+    public boolean publishCatalog(Map<String, Object> paload){
+        return  sendMessage(paload);
+    }
+    public Map<String, Object> createFullCatalog(String recipientNumber) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("messaging_product", "whatsapp");
         payload.put("to", recipientNumber);
         payload.put("type", "interactive");
+        payload.put("biz_opaque_callback_data","catalog");
+
 
         Map<String, Object> interactive = new HashMap<>();
         // Tell WhatsApp to open the full catalog
@@ -138,7 +131,7 @@ public class WhatsAppGateway {
 
         // The message bubble text
         Map<String, String> body = new HashMap<>();
-        body.put("text", "🍔 Welcome to eas! Tap below to view our full menu.");
+        body.put("text", "🍔 Welcome to GoBite! Tap below to view our full menu.");
         interactive.put("body", body);
 
         // Meta automatically pulls the catalog linked to your WhatsApp number
@@ -175,6 +168,7 @@ public class WhatsAppGateway {
                 "messaging_product", "whatsapp",
                 "to", customerNumber,
                 "type", "interactive",
+                "biz_opaque_callback_data", "text_location",
                 "interactive", Map.of(
                         "type", "location_request_message",
                         "body", Map.of("text", "Please share your location with us to make the delivery easy."),
@@ -193,69 +187,6 @@ public class WhatsAppGateway {
                 "text", Map.of("body", "👋 Thanks for reaching out to Kasi Grill! We are currently CLOSED. Our operating hours are daily from 10:00 to 21:00. See you tomorrow! 🔥")
         );
         return sendMessage(closedMessage);
-    }
-
-    public boolean menuResponseMessage(String messageText, String customerNumber, List<MenuItemDto> menu) {
-
-        if (menu.isEmpty()) {
-//            menuEmptyNotification(customerNumber);
-
-            sendMessage(createGreetingMenu(customerNumber));
-        }
-
-        List<Map<String, Object>> rows = menu.stream()
-                .map(item -> Map.<String, Object>of(
-                        "id", "item_" + item.id(),
-                        "title", item.name(),
-                        "description", "Price: R" + item.price()
-                ))
-                .toList();
-
-        List<Map<String, Object>> formattedSections = List.of(
-                Map.of(
-                        "title", "Kasi Grill Delights",
-                        "rows", rows
-                )
-        );
-        if (messageText != null && (messageText.equalsIgnoreCase("Show me the menu") || messageText.equalsIgnoreCase("1"))) {
-            return sendMessage(Map.of(
-                    "messaging_product", "whatsapp",
-                    "recipient_type", "individual",
-                    "to", customerNumber,
-                    "type", "interactive",
-                    "interactive", Map.of(
-                            "type", "list",
-                            "header", Map.of("type", "text", "text", "Kasi Grill Menu"),
-                            "body", Map.of("text", "Hungry? Choose an option below:"),
-                            "action", Map.of(
-                                    "button", "View Menu",
-                                    "sections", formattedSections
-                            )
-                    )
-            ));
-        }
-
-        return false;
-    }
-
-    public boolean getCustomerNumber(String customerNumber) {
-        return sendMessage(Map.of(
-                "messaging_product", "whatsapp",
-                "recipient_type", "individual",
-                "to", customerNumber,
-                "type", "text",
-                "text", Map.of("body", "Could you please share your mobile number so we can give you a quick call or text the moment it's ready for collection? Thanks!")
-        ));
-    }
-
-    public void menuEmptyNotification(String customerNumber) {
-        sendMessage(Map.of(
-                "messaging_product", "whatsapp",
-                "recipient_type", "individual",
-                "to", customerNumber,
-                "type", "text",
-                "text", Map.of("body", "👋 Thanks for contacting Kasi Grill! We are currently updating our menu items. Please check back in a few minutes! 🔥")
-        ));
     }
 
     public boolean publishOrders(List<OrderDto> orders, String customerNumber) {
@@ -309,7 +240,7 @@ public class WhatsAppGateway {
         sendMessage(Map.of(
                 "messaging_product", "whatsapp",
                 "recipient_type", "individual",
-                "to",  message.getCustomerIdentifier(),
+                "to", message.getCustomerIdentifier(),
                 "type", "text",
                 "text", Map.of("body", "I like your name ❤\uFE0F \uD83D\uDE05!")
         ));
@@ -319,7 +250,7 @@ public class WhatsAppGateway {
                 "to", message.getCustomerIdentifier(),
                 "type", "text",
                 "text", Map.of("body", "Ok " + name + " can we use this number to send you updates?\n\n1️⃣ Yes\n2️⃣ No"),
-                "biz_opaque_callback_data", "text_number"
+                "biz_opaque_callback_data", "text_number1"
         ));
 
 
@@ -403,6 +334,46 @@ public class WhatsAppGateway {
                 "to", customerNumber,
                 "type", "text",
                 "text", Map.of("body", " Process terminated. Let us know when you are ready to order again by typing Menu! \uD83D\uDC4B")
+        ));
+    }
+
+    public void publishInvalidOptionsMessage(String customerNumber) {
+        sendMessage(Map.of(
+                "messaging_product", "whatsapp",
+                "recipient_type", "individual",
+                "to", customerNumber,
+                "type", "text",
+                "text", Map.of("body", "Invalid option entered, Please enter the correct one!")
+        ));
+    }
+
+    public void publishInvalidMainMenuOption(String customerNumber) {
+        sendMessage(Map.of(
+                "messaging_product", "whatsapp",
+                "recipient_type", "individual",
+                "to", customerNumber,
+                "type", "text",
+                "text", Map.of("body", "Please choose an option from the menu above!")
+        ));
+    }
+
+    public void publishInvalidOnViewCatalog(String customerNumber) {
+        sendMessage(Map.of(
+                "messaging_product", "whatsapp",
+                "recipient_type", "individual",
+                "to", customerNumber,
+                "type", "text",
+                "text", Map.of("body", "Click View catalog above, to view the catalog!")
+        ));
+    }
+
+    public void publishInvalidLocation(String customerNumber) {
+        sendMessage(Map.of(
+                "messaging_product", "whatsapp",
+                "recipient_type", "individual",
+                "to", customerNumber,
+                "type", "text",
+                "text", Map.of("body", "Click Send Location button to send us your location!")
         ));
     }
 }

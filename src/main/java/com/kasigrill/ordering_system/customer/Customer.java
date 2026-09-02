@@ -18,12 +18,11 @@ public class Customer {
     @Id
     Long id;
 
-    @Column(
-            unique = true
-    )
     String mobile;
 
-    String status;
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    CustomerStatus status;
 
     String name;
 
@@ -41,7 +40,11 @@ public class Customer {
     @ToString.Exclude
     CustomerSession session;
 
-    @Column(nullable = false)
+    @Column(
+            nullable = false,
+            unique = true
+    )
     String customerIdentifierId;
+
 
 }

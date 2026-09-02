@@ -1,7 +1,6 @@
 package com.kasigrill.ordering_system.order;
 
 import com.kasigrill.ordering_system.customer.Customer;
-import com.kasigrill.ordering_system.customer.CustomerSession;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.ToString;
@@ -34,7 +33,7 @@ public class CustomerOrder {
 
 
     @ManyToOne(
-            optional = false, cascade = CascadeType.PERSIST
+            optional = false
     )
     @JoinColumn(
             name = "customerId"
@@ -50,13 +49,6 @@ public class CustomerOrder {
             mappedBy = "order"
     )
     @ToString.Exclude
-    List<OrderItem> orderItems=new ArrayList<>();
-
-
-    @OneToOne(
-            mappedBy = "customerOrder"
-    )
-    @ToString.Exclude
-    CustomerSession session;
+    List<OrderItem> orderItems = new ArrayList<>();
 
 }

@@ -5,7 +5,7 @@ import lombok.Data;
 @Data
 public class ShipDayOrderRequest {
 
-    private String orderNumber;
+    private int orderNumber;
     private String customerName;
     private String customerAddress;
     private String customerPhoneNumber;

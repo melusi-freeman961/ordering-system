@@ -26,13 +26,4 @@ public class CustomerSession {
     @ToString.Exclude
     Customer customer;
 
-
-    @OneToOne(
-            cascade = CascadeType.PERSIST
-    )
-    @JoinColumn(
-            name = "orderId"
-    )
-    @ToString.Exclude
-    CustomerOrder customerOrder;
 }

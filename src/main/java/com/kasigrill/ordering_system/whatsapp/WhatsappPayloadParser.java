@@ -26,7 +26,13 @@ public class WhatsappPayloadParser {
                 String textId = extractCustomId(payload);
 
                 if (textId != null) {
-                    if (textId.equalsIgnoreCase("text_name") || textId.equalsIgnoreCase("text_number")) {
+                    if (textId.equalsIgnoreCase("text_name") || textId.equalsIgnoreCase("text_number1")) {
+                        return textId;
+                    } else if (textId.equalsIgnoreCase("interactive_main_menu")) {
+                        return textId;
+                    } else if (textId.equalsIgnoreCase("catalog")) {
+                        return textId;
+                    } else if (textId.equalsIgnoreCase("text_location")) {
                         return textId;
                     }
                 }
@@ -69,6 +75,7 @@ public class WhatsappPayloadParser {
         // 2. Get the first message object
         return messages.getFirst();
     }
+
     @SuppressWarnings("unchecked")
     public String getNumberFromStatus(Map<String, Object> payload) {
         try {

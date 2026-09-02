@@ -6,6 +6,7 @@ import com.kasigrill.ordering_system.menuitem.MenuItem;
 import com.kasigrill.ordering_system.menuitem.MenuItemRequest;
 import com.kasigrill.ordering_system.menuitem.MenuRepository;
 import com.kasigrill.ordering_system.order.*;
+import com.kasigrill.ordering_system.shipday.ShipDayDeliveryService;
 import com.kasigrill.ordering_system.shipday.ShipDayOrderRequest;
 import com.kasigrill.ordering_system.whatsapp.MetaCatalogService;
 import org.springframework.stereotype.Service;
@@ -20,6 +21,8 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static com.kasigrill.ordering_system.customer.BotState.*;
+import static com.kasigrill.ordering_system.customer.CustomerStatus.NEW;
+import static com.kasigrill.ordering_system.customer.CustomerStatus.RETURNING;
 
 @Service
 public class StoreService {
@@ -35,6 +38,7 @@ public class StoreService {
     private final Map<String, Customer> activeSessions = new ConcurrentHashMap<>();
     private final Map<String, List<OrderItem>> activeSessionsOrderItems = new ConcurrentHashMap<>();
     private final Map<String, CustomerOrder> activeSessionsOrders = new ConcurrentHashMap<>();
+    private final ShipDayDeliveryService shipDayService;
     String helpNumber;
     private MetaCatalogService metaCatalogService;
 
@@ -44,7 +48,8 @@ public class StoreService {
             , SessionRepository sessionRepository
             , MenuRepository menuRepository
             , OrderRepository orderRepository
-            , MetaCatalogService metaCatalogService) {
+            , MetaCatalogService metaCatalogService
+            , ShipDayDeliveryService shipDayService) {
         this.customerNotService = service1;
         this.customerRepository = customerRepository;
         this.sessionRepository = sessionRepository;
@@ -52,6 +57,7 @@ public class StoreService {
         this.orderRepository = orderRepository;
         this.helpNumber = "0721982705";
         this.metaCatalogService = metaCatalogService;
+        this.shipDayService = shipDayService;
 
     }
 
@@ -59,8 +65,8 @@ public class StoreService {
     public boolean isStoreOpen() {
         LocalTime now = LocalTime.now(ZoneId.of("Africa/Johannesburg"));
 
-//        return !now.isBefore(OPENING_TIME) && !now.isAfter(CLOSING_TIME);
-        return true;
+        return !now.isBefore(OPENING_TIME) && !now.isAfter(CLOSING_TIME);
+
     }
 
 
@@ -71,50 +77,57 @@ public class StoreService {
             return;
         }
 
+        //get customer if they have an active session
         Customer customer = activeSessions.get(message.getCustomerIdentifier());
 
+        //customers don't have active session
         if (customer == null) {
-            customer = new Customer();
-            customer.setCustomerIdentifierId(message.getCustomerIdentifier());
+
+            customer = customerRepository.findByCustomerIdentifierId(message.getCustomerIdentifier());
+
+            //Customer is new
+            if (customer == null) {
+
+                customer = new Customer();
+                customer.setStatus(NEW);
+                customer.setCustomerIdentifierId(message.getCustomerIdentifier());
+
+
+            } else {
+
+                //Returning customer
+                customer.setStatus(RETURNING);
+
+            }
+
+            //assign active session to customer
             activeSessions.put(message.getCustomerIdentifier(), customer);
 
+            //after allocating an active session we send them the menu
             boolean sent = customerNotService.sendMainMenu(message.getCustomerIdentifier());
 
-            if (sent) {
-                CustomerSession session = customer.getSession();
 
-                if (session == null) {
-                    session = new CustomerSession();
-                    customer.setSession(session);
-                    session.setCustomer(customer);
-                }
+            // if we successfully sent the menu we change the bot state
+            if (sent) {
+
+                CustomerSession session = new CustomerSession();
                 session.setState(AWAITING_MAIN_MENU_INPUT);
+
+                customer.setSession(session);
+                session.setCustomer(customer);
+
 
             }
 
             return;
         }
 
+
+        //customer has an active session
         BotState state = customer.getSession().getState();
-
-        if (state.name().equalsIgnoreCase(String.valueOf(GREETING))) {
-            boolean sent = customerNotService.sendMainMenu(message.getCustomerIdentifier());
-
-            if (sent) {
-                CustomerSession session = customer.getSession();
-                session.setState(AWAITING_MAIN_MENU_INPUT);
-            }
-
-            return;
-        }
 
         if (state.name().equalsIgnoreCase(String.valueOf(AWAITING_MAIN_MENU_INPUT))) {
             boolean handled = customerNotService.handleMainManuInput(message);
-
-            if (handled) {
-
-            }
-
             return;
         }
 
@@ -139,10 +152,10 @@ public class StoreService {
 
         if (state.name().equalsIgnoreCase(String.valueOf(BotState.AWAITING_CUSTOMER_LOCATION))) {
             customer.setLocation((String) message.getCustomerMessage());
+            customer.getSession().setState(AWAITING_TERMINATION_INPUT);
 
             placeOrder(customer.getCustomerIdentifierId());
 
-            customer.getSession().setState(AWAITING_TERMINATION_INPUT);
 
             boolean sent = customerNotService.publishTerminationConfirmation(message.getCustomerIdentifier());
             return;
@@ -160,12 +173,12 @@ public class StoreService {
 
         Customer customer = order.getCustomer();
         String address = customer.getLocation();
-        String orderNumber = "#Kasi2-6" + order.getId();
+
         String customerName = customer.getName();
         String customerPhoneNumber = customer.getMobile();
-        String restaurantName = "Kasi grill";
+        String restaurantName = "GoBite";
         String restaurantAddress = address;
-//        double totalOrderCost = Double.parseDouble(String.valueOf(order.getOrderItem().getMenuItem().getPrice()));
+        double totalOrderCost = Double.parseDouble(String.valueOf(order.getOrderAmount()));
         String deliveryInstructions = "hhfjwekjjijiuehh";
 
 
@@ -173,11 +186,11 @@ public class StoreService {
         request.setCustomerAddress(address);
         request.setDeliveryInstructions(deliveryInstructions);
         request.setCustomerName(customerName);
-        request.setOrderNumber(orderNumber);
+        request.setOrderNumber(order.getOrderNumber());
         request.setRestaurantAddress(restaurantAddress);
         request.setCustomerPhoneNumber(customerPhoneNumber);
         request.setRestaurantName(restaurantName);
-//        request.setTotalOrderCost(totalOrderCost);
+        request.setTotalOrderCost(totalOrderCost);
 
         return request;
     }
@@ -211,62 +224,112 @@ public class StoreService {
     }
 
     public void addOderItem(String customerIdentifier, String sku, int quan) {
+
+        //get the manu item from db using sku
         MenuItem item = menuRepository.findBySku(sku);
 
+        //get the active customer session
+        Customer customer = activeSessions.get(customerIdentifier);
+
+        //get all the order items corresponding to this specific active customer session,else create a bucket to store them
         List<OrderItem> orderItems = activeSessionsOrderItems.computeIfAbsent(customerIdentifier, k -> new ArrayList<>());
+
+        //item is found in the db
         if (item != null) {
 
-            OrderItem orderItem = new OrderItem();
-            orderItem.setMenuItem(item);
-            orderItem.setQuantity(quan);
-            orderItems.add(orderItem);
+            //get the active order for this customer session
+            CustomerOrder order = activeSessionsOrders.get(customerIdentifier);
+
+            //no order bucket exists
+            if (order == null) {
+
+                //create order
+                order = new CustomerOrder();
+                order.setStatus(String.valueOf(OrderStatus.PENDING_PAYMENT));
+                order.setOrderNumber(generateOrderNumber());
+                order.setCustomer(customer);
+                customer.getOrders().add(order);
+
+                //create order item
+                OrderItem orderItem = new OrderItem();
+                orderItem.setMenuItem(item);
+                orderItem.setQuantity(quan);
+                orderItems.add(orderItem);
+                orderItem.setOrder(order);
+
+                order.getOrderItems().add(orderItem);
+
+                BigDecimal totalAmount = item.getPrice().multiply(BigDecimal.valueOf(orderItem.getQuantity()));
+
+                order.setOrderAmount(totalAmount);
+
+                activeSessionsOrders.put(customerIdentifier, order);
+                orderItems.add(orderItem);
+            } else {
+
+                OrderItem orderItem = new OrderItem();
+                orderItem.setMenuItem(item);
+                orderItem.setQuantity(quan);
+                orderItems.add(orderItem);
+                orderItem.setOrder(order);
+
+                order.getOrderItems().add(orderItem);
+
+                BigDecimal totalAmount = order.getOrderAmount().add(item.getPrice().multiply(BigDecimal.valueOf(orderItem.getQuantity())));
+
+                order.setOrderAmount(totalAmount);
+
+                orderItems.add(orderItem);
+
+            }
         }
     }
 
+    @Transactional
     private void placeOrder(String customerIdentifier) {
         Customer customer = activeSessions.get(customerIdentifier);
 
         if (customer == null) return;
 
-        List<OrderItem> orderItems = activeSessionsOrderItems.get(customerIdentifier);
-
-        CustomerOrder order = new CustomerOrder();
-        order.setStatus(String.valueOf(OrderStatus.PENDING_PAYMENT));
-        order.setOrderNumber(generateOrderNumber());
-        order.setCustomer(customer);
-        customer.getOrders().add(order);
-
-        BigDecimal totalAmount = BigDecimal.valueOf(0);
-
-
-        for (OrderItem orderItem : orderItems) {
-            order.getOrderItems().add(orderItem);
-            MenuItem item = orderItem.getMenuItem();
-
-            totalAmount = item.getPrice().multiply(BigDecimal.valueOf(orderItem.getQuantity()));
-
-        }
-
-        order.setOrderAmount(totalAmount);
-        activeSessionsOrders.put(customerIdentifier, order);
-
         CustomerSession session = customer.getSession();
+        CustomerOrder order = activeSessionsOrders.get(customerIdentifier);
 
         sessionRepository.save(session);
-        orderRepository.save(order);
-        customerRepository.save(customer);
+        order = orderRepository.save(order);
+        customer = customerRepository.save(customer);
 
+
+        activeSessionsOrders.remove(customerIdentifier);
+        activeSessionsOrderItems.remove(customerIdentifier);
+
+        ShipDayOrderRequest deliveryDto = createDeliveryDto(order);
+        shipDayService.dispatchOrder(deliveryDto);
     }
 
     @Transactional
     public void publishOrder(String customerIdentifier) {
 
-        boolean requested = customerNotService.requestCustomerName(customerIdentifier);
+        Customer customer = activeSessions.get(customerIdentifier);
 
-        if (requested) {
+        CustomerStatus status = customer.getStatus();
 
-            Customer customer = activeSessions.get(customerIdentifier);
-            customer.getSession().setState(AWAITING_CUSTOMER_NAME);
+        if (status != null) {
+            if (status.equals(NEW)) {
+                boolean requested = customerNotService.requestCustomerName(customerIdentifier);
+
+                if (requested) {
+                    customer.getSession().setState(AWAITING_CUSTOMER_NAME);
+                }
+
+            } else if (status.equals(RETURNING)) {
+
+                boolean requested = customerNotService.requestLocation(customerIdentifier);
+
+                if (requested) {
+                    customer.getSession().setState(AWAITING_CUSTOMER_LOCATION);
+                }
+
+            }
         }
 
     }
@@ -289,18 +352,52 @@ public class StoreService {
     }
 
     public void menuRequestedAgain(CustomerMessage message) {
-        boolean sent = customerNotService.sendMainMenu(message.getCustomerIdentifier());
 
-        if (sent) {
-            Customer customer = customerRepository.findByCustomerIdentifierId(message.getCustomerIdentifier());
 
-            if (customer != null) {
-                CustomerSession session = customer.getSession();
+        String customerIdentifier = message.getCustomerIdentifier();
+        Customer customer = activeSessions.get(customerIdentifier);
+
+        //customer doesn't have an active session
+        if (customer == null) {
+
+            customer = customerRepository.findByCustomerIdentifierId(message.getCustomerIdentifier());
+
+            //a new customer
+            if (customer == null) {
+                publishCustomerMessage(message);
+            } else {
+
+
+                //it's a returning customer
+                boolean sent = customerNotService.sendMainMenu(message.getCustomerIdentifier());
+
+                if (sent) {
+
+                    CustomerSession session = customer.getSession();
+                    customer.setStatus(RETURNING);
+
+                    if (session != null) {
+                        session.setState(AWAITING_MAIN_MENU_INPUT);
+                    }
+
+                    activeSessions.put(customerIdentifier, customer);
+                }
+            }
+        } else {
+
+            //an active customer requesting menu again
+
+            boolean sent = customerNotService.sendMainMenu(message.getCustomerIdentifier());
+            CustomerSession session = customer.getSession();
+
+            if (sent) {
                 if (session != null) {
                     session.setState(AWAITING_MAIN_MENU_INPUT);
                 }
             }
+
         }
+
     }
 
     public void addMenuItem(MenuItemRequest request) {
@@ -341,11 +438,28 @@ public class StoreService {
     public void backToManu(String customerIdentifier) {
 
         Customer customer = activeSessions.get(customerIdentifier);
+
+        activeSessionsOrders.remove(customerIdentifier);
+        activeSessionsOrderItems.remove(customerIdentifier);
+
         if (customer != null) {
+
+            customer.setStatus(RETURNING);
             CustomerSession session = customer.getSession();
 
             if (session != null) {
-                session.setState(AWAITING_TERMINATION_INPUT);
+                CustomerMessage message = new CustomerMessage() {
+                    @Override
+                    public String getCustomerIdentifier() {
+                        return customerIdentifier;
+                    }
+
+                    @Override
+                    public Object getCustomerMessage() {
+                        return null;
+                    }
+                };
+                menuRequestedAgain(message);
             }
         }
 
@@ -354,8 +468,8 @@ public class StoreService {
     public OrderDto getOrderDetails(String customerIdentifier) {
         CustomerOrder order = activeSessionsOrders.get(customerIdentifier);
 
-        if(order!=null){
-            return  new OrderDto(order.getOrderNumber(),order.getStatus(),order.getCreatedDate());
+        if (order != null) {
+            return new OrderDto(order.getOrderNumber(), order.getStatus(), order.getCreatedDate());
         }
         return null;
     }
