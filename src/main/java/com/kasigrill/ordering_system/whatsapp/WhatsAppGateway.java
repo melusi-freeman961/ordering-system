@@ -23,6 +23,20 @@ public class WhatsAppGateway {
     @Value("${whatsapp.access.token}")
     private String accessToken;
 
+    private static String getString(OrderDto order, String orderNum) {
+        String status = order.status();
+        String day = String.valueOf(order.dateTime().getDayOfMonth());
+        String month = String.valueOf(order.dateTime().getMonthValue());
+        String year = String.valueOf(order.dateTime().getYear());
+
+        String timeH = String.valueOf(order.dateTime().getHour());
+        String timeS = String.valueOf(order.dateTime().getSecond());
+
+        String date = day + "/" + month + "/" + year;
+        String time = timeH + ":" + timeS;
+
+        return "Order #" + orderNum + " was placed on " + date + " " + time + " and its current status is: " + status + ".";
+    }
 
     public boolean sendMessage(Map<String, Object> payload) {
 
@@ -87,7 +101,7 @@ public class WhatsAppGateway {
         payload.put("messaging_product", "whatsapp");
         payload.put("to", recipientNumber);
         payload.put("type", "interactive");
-        payload.put("biz_opaque_callback_data","interactive_main_menu");
+        payload.put("biz_opaque_callback_data", "interactive_main_menu");
 
         Map<String, Object> interactive = new HashMap<>();
         interactive.put("type", "button");
@@ -114,15 +128,16 @@ public class WhatsAppGateway {
         return payload;
     }
 
-    public boolean publishCatalog(Map<String, Object> paload){
-        return  sendMessage(paload);
+    public boolean publishCatalog(Map<String, Object> paload) {
+        return sendMessage(paload);
     }
+
     public Map<String, Object> createFullCatalog(String recipientNumber) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("messaging_product", "whatsapp");
         payload.put("to", recipientNumber);
         payload.put("type", "interactive");
-        payload.put("biz_opaque_callback_data","catalog");
+        payload.put("biz_opaque_callback_data", "catalog");
 
 
         Map<String, Object> interactive = new HashMap<>();
@@ -148,7 +163,6 @@ public class WhatsAppGateway {
 
         return payload;
     }
-
 
     private Map<String, Object> createReplyButton(String id, String title) {
         Map<String, Object> button = new HashMap<>();
@@ -197,10 +211,7 @@ public class WhatsAppGateway {
         for (OrderDto order : orders) {
 
             String orderNum = String.valueOf(order.orderNumber());
-            String status = order.status();
-            String date = String.valueOf(order.dateTime());
-
-            String message = "Order " + orderNum + "was placed on " + date + " and its current status is: " + status + ".";
+            String message = getString(order, orderNum);
             sent = sendMessage(Map.of(
                     "messaging_product", "whatsapp",
                     "recipient_type", "individual",
@@ -209,6 +220,7 @@ public class WhatsAppGateway {
                     "text", Map.of("body", message)
             ));
         }
+        publishTermination(customerNumber);
         return sent;
     }
 

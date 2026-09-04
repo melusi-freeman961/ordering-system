@@ -357,6 +357,13 @@ public class StoreService {
         String customerIdentifier = message.getCustomerIdentifier();
         Customer customer = activeSessions.get(customerIdentifier);
 
+        CustomerOrder order = activeSessionsOrders.get(message.getCustomerIdentifier());
+
+        if (order != null) {
+            order.setOrderAmount(BigDecimal.valueOf(0));
+        }
+
+
         //customer doesn't have an active session
         if (customer == null) {
 
