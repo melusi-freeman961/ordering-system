@@ -18,7 +18,7 @@ public class CustomerSession {
     private BotState state;
 
     @OneToOne(
-            optional = false, cascade = CascadeType.ALL
+            optional = false
     )
     @JoinColumn(
             name = "customerId"

@@ -22,9 +22,11 @@ public class MenuItemController {
 
     @PostMapping
     public ResponseEntity<?> create(@RequestBody MenuItemRequest request) {
-       service.addMenuItem(request);
-
-       return ResponseEntity.ok().build();
+        MenuItemResponse response = service.addMenuItem(request);
+        if(response.saved){
+            return ResponseEntity.status(201).body(response);
+        }
+        return ResponseEntity.badRequest().body("");
     }
     // Your JS also fires a GET request when the page loads, so you need a basic GET endpoint to prevent a 404 error
     @GetMapping

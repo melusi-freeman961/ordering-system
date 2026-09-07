@@ -29,13 +29,13 @@ public class Customer {
     String location;
 
     @OneToMany(
-            mappedBy = "customer"
+            mappedBy = "customer", cascade = CascadeType.ALL, orphanRemoval = true
     )
     @ToString.Exclude
     List<CustomerOrder> orders = new ArrayList<>();
 
     @OneToOne(
-            mappedBy = "customer"
+            mappedBy = "customer", cascade = CascadeType.ALL, orphanRemoval = true
     )
     @ToString.Exclude
     CustomerSession session;

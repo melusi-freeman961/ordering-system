@@ -2,13 +2,10 @@ package com.kasigrill.ordering_system.resturant;
 
 import com.kasigrill.ordering_system.config.CustomerNotificationService;
 import com.kasigrill.ordering_system.customer.*;
-import com.kasigrill.ordering_system.menuitem.MenuItem;
-import com.kasigrill.ordering_system.menuitem.MenuItemRequest;
-import com.kasigrill.ordering_system.menuitem.MenuRepository;
+import com.kasigrill.ordering_system.menuitem.*;
 import com.kasigrill.ordering_system.order.*;
-import com.kasigrill.ordering_system.shipday.ShipDayDeliveryService;
-import com.kasigrill.ordering_system.shipday.ShipDayOrderRequest;
 import com.kasigrill.ordering_system.whatsapp.MetaCatalogService;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,7 +35,8 @@ public class StoreService {
     private final Map<String, Customer> activeSessions = new ConcurrentHashMap<>();
     private final Map<String, List<OrderItem>> activeSessionsOrderItems = new ConcurrentHashMap<>();
     private final Map<String, CustomerOrder> activeSessionsOrders = new ConcurrentHashMap<>();
-    private final ShipDayDeliveryService shipDayService;
+
+    private final ApplicationEventPublisher eventPublisher;
     String helpNumber;
     private MetaCatalogService metaCatalogService;
 
@@ -49,7 +47,7 @@ public class StoreService {
             , MenuRepository menuRepository
             , OrderRepository orderRepository
             , MetaCatalogService metaCatalogService
-            , ShipDayDeliveryService shipDayService) {
+            , ApplicationEventPublisher eventPublisher) {
         this.customerNotService = service1;
         this.customerRepository = customerRepository;
         this.sessionRepository = sessionRepository;
@@ -57,7 +55,8 @@ public class StoreService {
         this.orderRepository = orderRepository;
         this.helpNumber = "0721982705";
         this.metaCatalogService = metaCatalogService;
-        this.shipDayService = shipDayService;
+
+        this.eventPublisher = eventPublisher;
 
     }
 
@@ -168,34 +167,6 @@ public class StoreService {
 
     }
 
-
-    private ShipDayOrderRequest createDeliveryDto(CustomerOrder order) {
-
-        Customer customer = order.getCustomer();
-        String address = customer.getLocation();
-
-        String customerName = customer.getName();
-        String customerPhoneNumber = customer.getMobile();
-        String restaurantName = "GoBite";
-        String restaurantAddress = address;
-        double totalOrderCost = Double.parseDouble(String.valueOf(order.getOrderAmount()));
-        String deliveryInstructions = "hhfjwekjjijiuehh";
-
-
-        ShipDayOrderRequest request = new ShipDayOrderRequest();
-        request.setCustomerAddress(address);
-        request.setDeliveryInstructions(deliveryInstructions);
-        request.setCustomerName(customerName);
-        request.setOrderNumber(order.getOrderNumber());
-        request.setRestaurantAddress(restaurantAddress);
-        request.setCustomerPhoneNumber(customerPhoneNumber);
-        request.setRestaurantName(restaurantName);
-        request.setTotalOrderCost(totalOrderCost);
-
-        return request;
-    }
-
-
     @Transactional(readOnly = true)
     public List<OrderDto> publishCustomerOrders(String customerIdentifier) {
         Customer customer = customerRepository.findByCustomerIdentifierId(customerIdentifier);
@@ -291,19 +262,11 @@ public class StoreService {
 
         if (customer == null) return;
 
-        CustomerSession session = customer.getSession();
         CustomerOrder order = activeSessionsOrders.get(customerIdentifier);
 
-        sessionRepository.save(session);
-        order = orderRepository.save(order);
         customer = customerRepository.save(customer);
 
-
-        activeSessionsOrders.remove(customerIdentifier);
-        activeSessionsOrderItems.remove(customerIdentifier);
-
-        ShipDayOrderRequest deliveryDto = createDeliveryDto(order);
-        shipDayService.dispatchOrder(deliveryDto);
+        eventPublisher.publishEvent(new CustomerCreatedEvent(order));
     }
 
     @Transactional
@@ -407,7 +370,7 @@ public class StoreService {
 
     }
 
-    public void addMenuItem(MenuItemRequest request) {
+    public MenuItemResponse addMenuItem(MenuItemRequest request) {
         MenuItem item = new MenuItem();
         item.setPrice(request.getPrice());
         item.setAvailable(request.isAvailable());
@@ -417,11 +380,19 @@ public class StoreService {
         item.setWebsiteLink(request.getWebsiteLink());
 
         String sku = generateSku(request.getTitle());
-        item.setSku(sku);
 
-        menuRepository.save(item);
+        if (!sku.isBlank()) {
+            item.setSku(sku);
 
-        metaCatalogService.pushToWhatsAppCatalog(request, sku);
+
+            menuRepository.save(item);
+
+            eventPublisher.publishEvent(new MenuItemCreatedEvent(request, sku));
+
+
+        }
+
+        return new MenuItemResponse("", "", false);
     }
 
     private String generateSku(String title) {

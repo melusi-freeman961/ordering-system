@@ -26,7 +26,7 @@ public class MetaCatalogService {
 
     private final RestTemplate restTemplate = new RestTemplate();
 
-    public void pushToWhatsAppCatalog(MenuItemRequest item, String generatedSku) {
+    public boolean pushToWhatsAppCatalog(MenuItemRequest item, String generatedSku) {
         // The Meta Graph API endpoint for adding products to a catalog
         String url = "https://graph.facebook.com/v25.0/" + catalogId + "/products";
 
@@ -38,9 +38,10 @@ public class MetaCatalogService {
 
         try {
             ResponseEntity<String> response = restTemplate.postForEntity(url, request, String.class);
-            System.out.println("✅ Item successfully pushed to WhatsApp Catalog! Meta Response: " + response.getBody());
+            return true;
         } catch (Exception e) {
             System.err.println("❌ Failed to push to Meta Catalog: " + e.getMessage());
+            return false;
         }
     }
 

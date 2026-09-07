@@ -153,10 +153,6 @@ public class WhatsAppGateway {
         Map<String, Object> action = new HashMap<>();
         action.put("name", "catalog_message");
 
-        // Optional: Set a specific item's image to show on the message bubble
-//        Map<String, Object> parameters = new HashMap<>();
-//        parameters.put("thumbnail_product_retailer_id", "v7933et4vv");
-//        action.put("parameters", parameters);
 
         interactive.put("action", action);
         payload.put("interactive", interactive);
