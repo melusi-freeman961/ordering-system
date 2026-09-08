@@ -7,6 +7,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
@@ -382,6 +383,16 @@ public class WhatsAppGateway {
                 "to", customerNumber,
                 "type", "text",
                 "text", Map.of("body", "Click Send Location button to send us your location!")
+        ));
+    }
+
+    public void publishStatusUpdate(String customerNumber, String message) {
+        sendMessage(Map.of(
+                "messaging_product", "whatsapp",
+                "recipient_type", "individual",
+                "to", customerNumber,
+                "type", "text",
+                "text", Map.of("body", message)
         ));
     }
 }

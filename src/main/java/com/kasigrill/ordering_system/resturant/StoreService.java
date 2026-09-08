@@ -4,8 +4,11 @@ import com.kasigrill.ordering_system.config.CustomerNotificationService;
 import com.kasigrill.ordering_system.customer.*;
 import com.kasigrill.ordering_system.menuitem.*;
 import com.kasigrill.ordering_system.order.*;
+import com.kasigrill.ordering_system.ors.OpenRouteServiceClient;
+import com.kasigrill.ordering_system.ors.RouteResponse;
 import com.kasigrill.ordering_system.whatsapp.MetaCatalogService;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,11 +18,13 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static com.kasigrill.ordering_system.customer.BotState.*;
 import static com.kasigrill.ordering_system.customer.CustomerStatus.NEW;
 import static com.kasigrill.ordering_system.customer.CustomerStatus.RETURNING;
+import static com.kasigrill.ordering_system.order.OrderStatus.*;
 
 @Service
 public class StoreService {
@@ -27,6 +32,9 @@ public class StoreService {
     private static final LocalTime OPENING_TIME = LocalTime.of(10, 0);
     private static final LocalTime CLOSING_TIME = LocalTime.of(23, 50);
     private static int orderNumber;
+    private final BigDecimal serviceFee=BigDecimal.valueOf(5);
+    private final BigDecimal deliveryFlatFee=BigDecimal.valueOf(25);
+    private final BigDecimal amountPerKm=BigDecimal.valueOf(10);
     private final CustomerNotificationService customerNotService;
     private final CustomerRepository customerRepository;
     private final SessionRepository sessionRepository;
@@ -36,10 +44,15 @@ public class StoreService {
     private final Map<String, List<OrderItem>> activeSessionsOrderItems = new ConcurrentHashMap<>();
     private final Map<String, CustomerOrder> activeSessionsOrders = new ConcurrentHashMap<>();
 
+    private final Map<String, RouteResponse> activeSessionRouteResponse = new ConcurrentHashMap<>();
+
     private final ApplicationEventPublisher eventPublisher;
     String helpNumber;
     private MetaCatalogService metaCatalogService;
+    private OpenRouteServiceClient orsClient;
 
+    private Double stLatitude;
+    private Double stLongitude;
 
     public StoreService(CustomerNotificationService service1
             , CustomerRepository customerRepository
@@ -47,7 +60,8 @@ public class StoreService {
             , MenuRepository menuRepository
             , OrderRepository orderRepository
             , MetaCatalogService metaCatalogService
-            , ApplicationEventPublisher eventPublisher) {
+            , ApplicationEventPublisher eventPublisher
+            , OpenRouteServiceClient orsClient) {
         this.customerNotService = service1;
         this.customerRepository = customerRepository;
         this.sessionRepository = sessionRepository;
@@ -55,8 +69,10 @@ public class StoreService {
         this.orderRepository = orderRepository;
         this.helpNumber = "0721982705";
         this.metaCatalogService = metaCatalogService;
-
+        this.orsClient = orsClient;
         this.eventPublisher = eventPublisher;
+        this.stLongitude=25.6215;
+        this.stLatitude=-33.9604;
 
     }
 
@@ -79,6 +95,7 @@ public class StoreService {
         //get customer if they have an active session
         Customer customer = activeSessions.get(message.getCustomerIdentifier());
 
+        CustomerSession session=null;
         //customers don't have active session
         if (customer == null) {
 
@@ -96,7 +113,7 @@ public class StoreService {
 
                 //Returning customer
                 customer.setStatus(RETURNING);
-
+                session=customer.getSession();
             }
 
             //assign active session to customer
@@ -109,7 +126,9 @@ public class StoreService {
             // if we successfully sent the menu we change the bot state
             if (sent) {
 
-                CustomerSession session = new CustomerSession();
+                if(session==null){
+                    session = new CustomerSession();
+                }
                 session.setState(AWAITING_MAIN_MENU_INPUT);
 
                 customer.setSession(session);
@@ -150,7 +169,20 @@ public class StoreService {
         }
 
         if (state.name().equalsIgnoreCase(String.valueOf(BotState.AWAITING_CUSTOMER_LOCATION))) {
-            customer.setLocation((String) message.getCustomerMessage());
+
+            Map<String, Object> locationData = (Map<String, Object>) message.getCustomerMessage();
+
+            Double csLatitude = (Double) locationData.get("latitude");
+            Double csLongitude = (Double) locationData.get("longitude");
+
+            RouteResponse routeResponse = calculateRoute(stLongitude, stLatitude, csLongitude, csLatitude);
+
+
+            activeSessionRouteResponse.put(message.getCustomerIdentifier(), routeResponse);
+
+            String driverMapsLink = "https://www.google.com/maps/search/?api=1&query=" + csLatitude + "," + csLongitude;
+
+            customer.setLocation(driverMapsLink);
             customer.getSession().setState(AWAITING_TERMINATION_INPUT);
 
             placeOrder(customer.getCustomerIdentifierId());
@@ -194,13 +226,20 @@ public class StoreService {
         return orderNumber;
     }
 
+    @Transactional
     public void addOderItem(String customerIdentifier, String sku, int quan) {
 
         //get the manu item from db using sku
         MenuItem item = menuRepository.findBySku(sku);
 
+
+        Customer customer = customerRepository.findByCustomerIdentifierId(customerIdentifier);
+
         //get the active customer session
-        Customer customer = activeSessions.get(customerIdentifier);
+        if (customer == null) {
+            customer = activeSessions.get(customerIdentifier);
+        }
+
 
         //get all the order items corresponding to this specific active customer session,else create a bucket to store them
         List<OrderItem> orderItems = activeSessionsOrderItems.computeIfAbsent(customerIdentifier, k -> new ArrayList<>());
@@ -450,5 +489,99 @@ public class StoreService {
             return new OrderDto(order.getOrderNumber(), order.getStatus(), order.getCreatedDate());
         }
         return null;
+    }
+
+    public List<OrderResponse> getAllOrders() {
+        List<CustomerOrder> orders = orderRepository.findAll();
+
+
+        List<OrderResponse> orderResponses = new ArrayList<>();
+
+        for (CustomerOrder order : orders) {
+            List<OrderItem> orderItems = order.getOrderItems();
+
+            List<OrderItemResponse> itemResponses = new ArrayList<>();
+            for (OrderItem item : orderItems) {
+                itemResponses.add(new OrderItemResponse(item.getMenuItem().getTitle(), item.getQuantity()));
+            }
+
+            orderResponses.add(new OrderResponse(order.getId(), String.valueOf(order.getOrderNumber()), order.getCustomer().getName(), order.getCustomer().getMobile(), order.getOrderAmount(), order.getStatus(), itemResponses));
+        }
+
+        return orderResponses;
+    }
+
+
+    @Transactional
+    public OrderResponse updateStatus(Long id, String status) {
+        Optional<CustomerOrder> order = orderRepository.findById(id);
+
+        if (order.isPresent()) {
+            CustomerOrder updatedOrder = order.get();
+            updatedOrder.setStatus(status);
+            CustomerOrder savedOrder = orderRepository.save(updatedOrder);
+
+            eventPublisher.publishEvent(new OrderStatusUpdatedEvent(savedOrder, status));
+            List<OrderItemResponse> orderItemResponses = new ArrayList<>();
+            for (OrderItem item : savedOrder.getOrderItems()) {
+                orderItemResponses.add(new OrderItemResponse(item.getMenuItem().getTitle(), item.getQuantity()));
+
+            }
+
+            return new OrderResponse(id, String.valueOf(updatedOrder.getOrderNumber())
+                    , updatedOrder.getCustomer().getName()
+                    , updatedOrder.getCustomer().getMobile()
+                    , savedOrder.getOrderAmount()
+                    , updatedOrder.getStatus()
+                    , orderItemResponses);
+
+        }
+        return null;
+    }
+
+
+    public void publishStatusUpdate(CustomerOrder order, String status) {
+
+        Customer customer = order.getCustomer();
+
+
+        if (status.equalsIgnoreCase(ACCEPTED.name())) {
+            String message = "✅ Your order-#" + order.getOrderNumber() + " was accepted";
+
+            customerNotService.publishStatusUpdateToUser(customer.getCustomerIdentifierId(), message);
+
+
+        } else if (status.equalsIgnoreCase(PREPARING.name())) {
+
+            String message = "\uD83D\uDC68\u200D\uD83C\uDF73 Your order-#" + order.getOrderNumber() + " is being prepared.";
+            customerNotService.publishStatusUpdateToUser(customer.getCustomerIdentifierId(), message);
+
+        } else if (status.equalsIgnoreCase(READY.name())) {
+
+            String message = "\uD83D\uDCE6 Your order-#" + order.getOrderNumber() + " is ready for pickup, searching for a driver...";
+            customerNotService.publishStatusUpdateToUser(customer.getCustomerIdentifierId(), message);
+
+        }
+    }
+
+    @Async
+    private RouteResponse calculateRoute(
+            double restaurantLongitude,
+            double restaurantLatitude,
+            double customerLongitude,
+            double customerLatitude
+    ) {
+        return orsClient.calculateRoute(
+                restaurantLongitude,
+                restaurantLatitude,
+                customerLongitude,
+                customerLatitude
+        );
+    }
+
+    private BigDecimal calculateDeliveryFee(double km){
+
+        BigDecimal amount=amountPerKm.multiply(BigDecimal.valueOf(km));
+        return deliveryFlatFee.add(amount);
     }
 }

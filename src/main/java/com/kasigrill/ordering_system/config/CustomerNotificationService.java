@@ -25,4 +25,6 @@ public interface CustomerNotificationService {
     boolean requestCustomerName(String customerIdentifier);
 
     boolean publishTerminationConfirmation(String customerIdentifier);
+
+    void publishStatusUpdateToUser(String order, String status);
 }

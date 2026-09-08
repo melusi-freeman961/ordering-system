@@ -146,7 +146,7 @@ public class WhatsAppService implements CustomerNotificationService {
                     whatsAppGateway.sendOrderConfirmation(senderNumber, orderDetails.orderNumber());
                 }
 
-                csMessage.message = driverMapsLink;
+                csMessage.message = locationData;
                 storeService.publishCustomerMessage(csMessage);
 
 
@@ -196,6 +196,12 @@ public class WhatsAppService implements CustomerNotificationService {
     public boolean publishTerminationConfirmation(String customerNumber) {
         return whatsAppGateway.publishTermination(customerNumber);
     }
+
+    @Override
+    public void publishStatusUpdateToUser(String customerNumber, String status) {
+        whatsAppGateway.publishStatusUpdate(customerNumber,status);
+    }
+
 
     private String isNumberValid(String customerNumber, String preferredNumber) {
         if (preferredNumber.matches("^(\\+27|27|0)[6-8][0-9]{8}$")) {
